@@ -31,7 +31,10 @@ permissions:
 jobs:
   release:
     name: Build macOS (${{ matrix.arch }})
-    runs-on: macos-26-xlarge
+    # Standard macOS runner (included free minutes on public repos). Note:
+    # `macos-26-xlarge` is a GitHub Larger Runner and requires paid billing —
+    # personal forks should stick to the standard runner.
+    runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
