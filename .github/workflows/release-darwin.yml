@@ -151,7 +151,11 @@ jobs:
       - name: Create DMG
         run: |
           mkdir -p out
-          node build/darwin/create-dmg.ts '../VSCode-darwin-${{ env.VSCODE_ARCH }}' "$(pwd)/out"
+          # create-dmg.ts joins its buildDir arg with `VSCode-darwin-${VSCODE_ARCH}`
+          # (build/darwin/create-dmg.ts:161). The gulp packaging task writes the
+          # .app under the repo's PARENT directory (buildRoot = dirname(repo)),
+          # so the arg is `..`, not the arch-specific path.
+          node build/darwin/create-dmg.ts '..' "$(pwd)/out"
 
       # The DMG's volume icon is set via badge_icon in dmg-settings.py; this
       # pass replaces the volume icon itself inside the DMG if the first one
