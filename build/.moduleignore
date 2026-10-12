@@ -225,6 +225,14 @@ zone.js/dist/**
 # Agent Host uses the runtime bundled with @github/copilot-sdk.
 @github/copilot/**
 
+# The built-in copilot extension is shipped from source by
+# packageCopilotExtensionStream (build/lib/extensions.ts), which needs the
+# full package (SDK skeleton under `sdk/`) inside the extension. Restore it
+# for extensions while keeping the Agent Host (app root) unaffected: the
+# include only matches paths under a node_modules/@github/copilot directory,
+# which app-root does not carry.
+!@github/copilot/**
+
 # Standalone Copilot CLI platform packages are not product dependencies.
 @github/copilot-darwin-arm64/**
 @github/copilot-darwin-x64/**
