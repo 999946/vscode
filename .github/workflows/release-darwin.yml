@@ -102,7 +102,7 @@ jobs:
         with:
           enableCrossOsArchive: true
           path: .build/builtInExtensions
-          key: 'builtin-extensions-${{ hashFiles(".build/builtindepshash") }}'
+          key: 'builtin-extensions-${{ hashFiles(''.build/builtindepshash'') }}'
 
       - name: Download built-in extensions
         if: steps.cache-builtin-extensions.outputs.cache-hit != 'true'
