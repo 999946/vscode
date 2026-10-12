@@ -113,6 +113,13 @@ export class ExtensionService extends AbstractExtensionService implements IExten
 	}
 
 	private _initFetchFileSystem(): void {
+		// The fetch file system provider is a window-level shared resource. Multiple
+		// workspace sessions each create their own ExtensionService instance, so only
+		// register the provider once (registerProvider throws for an existing scheme).
+		if (this._fileService.getProvider(Schemas.http) || this._fileService.getProvider(Schemas.https)) {
+			return;
+		}
+
 		const provider = new FetchFileSystemProvider();
 		this._register(this._fileService.registerProvider(Schemas.http, provider));
 		this._register(this._fileService.registerProvider(Schemas.https, provider));

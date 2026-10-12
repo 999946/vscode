@@ -259,13 +259,17 @@ export interface IActivationEventsReader {
 	readActivationEvents(extensionDescription: IExtensionDescription): string[];
 }
 
-export class LockableExtensionDescriptionRegistry implements IReadOnlyExtensionDescriptionRegistry {
+export class LockableExtensionDescriptionRegistry implements IReadOnlyExtensionDescriptionRegistry, IDisposable {
 
 	private readonly _actual: ExtensionDescriptionRegistry;
 	private readonly _lock = new Lock();
 
 	constructor(activationEventsReader: IActivationEventsReader) {
 		this._actual = new ExtensionDescriptionRegistry(activationEventsReader, []);
+	}
+
+	public dispose(): void {
+		this._actual.dispose();
 	}
 
 	public async acquireLock(customerName: string): Promise<ExtensionDescriptionRegistryLock> {

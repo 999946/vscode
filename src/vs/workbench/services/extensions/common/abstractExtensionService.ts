@@ -1314,6 +1314,13 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 	protected abstract _resolveExtensions(): AsyncIterable<ResolvedExtensions>;
 	protected abstract _onExtensionHostExit(code: number): Promise<void>;
 	protected abstract _resolveAuthority(remoteAuthority: string): Promise<ResolverResult>;
+
+	public override dispose(): void {
+		// The registry is not registered via _register (it has its own lock
+		// semantics), so dispose it explicitly together with the extension hosts.
+		this._registry.dispose();
+		super.dispose();
+	}
 }
 
 class ExtensionHostCollection extends Disposable {
