@@ -142,6 +142,9 @@ async function runDmgBuild(settingsFile: string, volumeName: string, artifactPat
 async function main(buildDir?: string, outDir?: string): Promise<void> {
 	const arch = process.env['VSCODE_ARCH'];
 	const quality = process.env['VSCODE_QUALITY'];
+	// OSS builds have no quality; fall back to the stable background art while
+	// keeping the volume title at 'Code OSS' (see the switch below).
+	const backgroundQuality = quality ?? 'stable';
 
 	if (!buildDir) {
 		throw new Error('Build directory argument is required');
@@ -160,7 +163,7 @@ async function main(buildDir?: string, outDir?: string): Promise<void> {
 	const appPath = path.join(appRoot, appName);
 	const dmgName = `VSCode-darwin-${arch}`;
 	const artifactPath = path.join(outDir, `${dmgName}.dmg`);
-	const backgroundPath = path.join(import.meta.dirname, `dmg-background-${quality}.tiff`);
+	const backgroundPath = path.join(import.meta.dirname, `dmg-background-${backgroundQuality}.tiff`);
 	const diskIconPath = path.join(root, 'resources', 'darwin', 'code.icns');
 	let title = 'Code OSS';
 	switch (quality) {

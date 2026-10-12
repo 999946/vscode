@@ -1,0 +1,194 @@
+name: Release macOS (x64 + arm64)
+
+# Builds the fork's macOS release for both Intel (x64) and Apple Silicon
+# (arm64), ad-hoc signed (no Apple developer certificate, same as terax),
+# packaged as a DMG and attached to a GitHub Release.
+#
+# Trigger: push a tag matching `release-*` (e.g. `release-v0.1.0`), or run
+# manually from the Actions tab (workflow_dispatch).
+#
+# Usage notes for the end user:
+#   - M-series Macs: Apple Silicon DMG; Intel Macs: Intel DMG.
+#   - The app is ad-hoc signed, so Gatekeeper will block first launch.
+#     Remove the quarantine first:
+#       xattr -cr "/Applications/Code - OSS.app"
+#   - Or right-click → Open → Open (once).
+
+on:
+  push:
+    tags:
+      - 'release-*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version for manual dispatch (e.g. 0.2.0 → tag v0.2.0); defaults to an auto-generated timestamp tag'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: macos-26-xlarge
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    env:
+      VSCODE_ARCH: ${{ matrix.arch }}
+      # x64 cross-builds from the arm64 runner need npm to resolve the
+      # host-node architecture; arm64 uses its native arch. This matches the
+      # official pr-darwin-test.yml recipe.
+      NPM_ARCH: ${{ matrix.arch }}
+      # Skip downloading Electron/Chromium during npm ci; setup-electron
+      # fetches the exact arch below.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      # Avoid dlopen of Kerberos on macOS (missing libs); official CI flag.
+      GYP_DEFINES: 'kerberos_use_rtld=false'
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install Python setuptools (dmgbuild)
+        run: python3 -m pip install --break-system-packages setuptools
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: ./.github/actions/restore-node-modules
+        with:
+          key-prefix: node_modules-macos
+          key-args: 'darwin ${{ env.VSCODE_ARCH }} $(node -p process.arch)'
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          for i in {1..5}; do # try 5 times
+            npm ci && break
+            if [ $i -eq 5 ]; then
+              echo "Npm install failed too many times" >&2
+              exit 1
+            fi
+            echo "Npm install failed $i, trying again..."
+          done
+        env:
+          npm_config_arch: ${{ env.NPM_ARCH }}
+          VSCODE_ARCH: ${{ env.VSCODE_ARCH }}
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GYP_DEFINES: 'kerberos_use_rtld=false'
+
+      - name: Prepare Electron types
+        run: node build/npm/electronTypes.ts
+
+      - name: Prepare built-in extensions cache key
+        run: node build/azure-pipelines/common/computeBuiltInDepsCacheKey.ts > .build/builtindepshash
+
+      - name: Restore built-in extensions cache
+        id: cache-builtin-extensions
+        uses: actions/cache/restore@v4
+        with:
+          enableCrossOsArchive: true
+          path: .build/builtInExtensions
+          key: 'builtin-extensions-${{ hashFiles(".build/builtindepshash") }}'
+
+      - name: Download built-in extensions
+        if: steps.cache-builtin-extensions.outputs.cache-hit != 'true'
+        run: node build/lib/builtInExtensions.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Electron
+        uses: ./.github/actions/setup-electron
+        with:
+          arch: ${{ env.VSCODE_ARCH }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The copilot extension is excluded from the local-extensions packaging
+      # (build/lib/extensions.ts excludedExtensions), so it is NOT picked up by
+      # core-ci. Official Azure CI downloads it as a VSIX; on GitHub Actions we
+      # compile it from source and drop it into .build/extensions before the
+      # darwin packaging task runs.
+      - name: Compile copilot extension (source)
+        working-directory: extensions/copilot
+        run: npm run compile
+
+      - name: Package copilot extension into build
+        run: npm run gulp compile-copilot-extension-build
+
+      - name: Compile core
+        run: npm run gulp core-ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package .app (${{ matrix.arch }})
+        run: npm run gulp vscode-darwin-${{ env.VSCODE_ARCH }}-min-ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ad-hoc sign app
+        run: codesign --force --deep --sign - '../VSCode-darwin-${{ env.VSCODE_ARCH }}/Code - OSS.app'
+
+      - name: Verify code signature
+        run: codesign --verify --deep --strict '../VSCode-darwin-${{ env.VSCODE_ARCH }}/Code - OSS.app'
+
+      - name: Create DMG
+        run: |
+          mkdir -p out
+          node build/darwin/create-dmg.ts '../VSCode-darwin-${{ env.VSCODE_ARCH }}' "$(pwd)/out"
+
+      # The DMG's volume icon is set via badge_icon in dmg-settings.py; this
+      # pass replaces the volume icon itself inside the DMG if the first one
+      # did not take (idempotent, just overwrites the same .VolumeIcon.icns).
+      - name: Patch DMG volume icon
+        run: python3 build/darwin/patch-dmg.py out/VSCode-darwin-${{ env.VSCODE_ARCH }}.dmg resources/darwin/code.icns
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VSCode-darwin-${{ env.VSCODE_ARCH }}
+          path: out/VSCode-darwin-${{ env.VSCODE_ARCH }}.dmg
+          if-no-files-found: error
+
+      # Resolve the release tag once per job. On a tag push GITHUB_REF_NAME is
+      # already the bare tag; on manual dispatch we build one from the input, or
+      # fall back to a timestamp tag when the input is blank.
+      - name: Determine release tag
+        id: release-tag
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "tag=v${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=manual-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Each matrix job uploads its own arch DMG to the SAME release/tag.
+      # Both jobs race on the first `gh release create`; the loser falls back
+      # to `--clobber` upload, which appends the asset on top of the release
+      # the winner just created.
+      - name: Attach to GitHub Release
+        run: |
+          TAG="${{ steps.release-tag.outputs.tag }}"
+          DMG="out/VSCode-darwin-${{ env.VSCODE_ARCH }}.dmg"
+          echo "dnNjb2RlLWZvcmsg5aSaIHdvcmtzcGFjZSDniYggbWFjT1Mg5p6E5bu677yIX19BUkNIX1/vvInjgIIKCuWuieijheivtOaYju+8mgoxLiBNIOezu+WIlyBNYWMg6YCJ5oupICoqQXBwbGUgU2lsaWNvbioqIGRtZ++8jEludGVsIE1hYyDpgInmi6kgKipJbnRlbCoqIGRtZ+OAggoyLiDlj4zlh7sgZG1nIOaKiiBgQ29kZSAtIE9TUy5hcHBgIOaLluWFpSBBcHBsaWNhdGlvbnPjgIIKMy4gYWQtaG9jIOetvuWQjeS8muiiqyBHYXRla2VlcGVyIOaLpuaIqu+8jOmmluasoeaJk+W8gOWJjeaJp+ihjO+8mgoKICAgYGBgCiAgIHhhdHRyIC1jciAvQXBwbGljYXRpb25zL0NvZGVcIC1cIE9TUy5hcHAKICAgYGBgCgogICDmiJblj7PplK4g4oaSIOaJk+W8gCDihpIg5omT5byA44CCCg==" | base64 -d | sed "s/__ARCH__/${{ matrix.arch }}/" > /tmp/release-notes.md
+          gh release create "$TAG" "$DMG" \
+            --title "vscode-fork $TAG" \
+            --notes-file /tmp/release-notes.md \
+          || gh release upload "$TAG" "$DMG" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
