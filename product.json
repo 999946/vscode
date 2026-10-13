@@ -1,6 +1,8 @@
 {
 	"nameShort": "Code - OSS",
 	"nameLong": "Code - OSS",
+	"quality": "stable",
+	"updateUrl": "https://api.github.com/repos/999946/vscode/releases/latest",
 	"applicationName": "code-oss",
 	"dataFolderName": ".vscode-oss",
 	"sharedDataFolderName": ".vscode-oss-shared",
