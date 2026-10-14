@@ -13,9 +13,11 @@ import { IAnyWorkspaceIdentifier, IWorkspaceContextService, isSingleFolderWorksp
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
 import { IPolicyService } from '../../../../platform/policy/common/policy.js';
 import { IRemoteAgentService } from '../../remote/common/remoteAgentService.js';
+import { CommandService } from '../../commands/common/commandService.js';
 import { IRemoteAuthorityResolverService } from '../../../../platform/remote/common/remoteAuthorityResolver.js';
 import { IUserDataProfileService } from '../../userDataProfile/common/userDataProfile.js';
 import { IUserDataProfilesService } from '../../../../platform/userDataProfile/common/userDataProfile.js';
@@ -160,6 +162,15 @@ export abstract class WorkspaceSessionService extends Disposable implements IWor
 		const extensionService = this.createExtensionService(scopedInstantiationService);
 		services.set(IExtensionService, extensionService);
 
+		// 5. Command service scoped to this session. Resolves handler
+		//    dependencies through the session's services (workspace context,
+		//    storage, extension host) so commands invoked from this session's UI
+		//    operate on this workspace instead of the main one. Created after the
+		//    extension service is registered so its injected `IExtensionService`
+		//    resolves to this session's extension host.
+		const commandService = scopedInstantiationService.createInstance(CommandService);
+		services.set(ICommandService, commandService);
+
 		// Build the session
 		const context: IWorkspaceContext = {
 			sessionId,
@@ -174,6 +185,7 @@ export abstract class WorkspaceSessionService extends Disposable implements IWor
 			workspaceService,
 			workspaceTrustManagementService,
 			extensionService,
+			commandService,
 			this.logService,
 		);
 
@@ -258,6 +270,7 @@ class WorkspaceSession extends Disposable implements IWorkspaceSession {
 		workspaceService: WorkspaceService,
 		workspaceTrustManagementService: WorkspaceTrustManagementService,
 		extensionService: SessionExtensionService,
+		commandService: CommandService,
 		logService: ILogService,
 	) {
 		super();
@@ -267,6 +280,7 @@ class WorkspaceSession extends Disposable implements IWorkspaceSession {
 		this.disposables.add(workspaceService);
 		this.disposables.add(workspaceTrustManagementService);
 		this.disposables.add(extensionService);
+		this.disposables.add(commandService);
 		this.disposables.add(scopedInstantiationService);
 
 		void logService.trace(`[workspaceSession] created session ${context.sessionId}`);

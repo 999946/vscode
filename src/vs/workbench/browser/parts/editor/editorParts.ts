@@ -170,12 +170,23 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 
 		// Session Part (if created)
 		const sessionPartId = (part as EditorPart).getId();
-		const sessionPartInstantiationService = this.mapSessionPartToInstantiationService.get(sessionPartId);
-		if (sessionPartInstantiationService) {
-			return sessionPartInstantiationService;
+		let sessionPartInstantiationService = this.mapSessionPartToInstantiationService.get(sessionPartId);
+		if (!sessionPartInstantiationService) {
+			// Lazily build a dispatch service scoped to the session part,
+			// mirroring the main part: a scoped editor service bound to this
+			// part's groups. Commands executed from this part resolve through
+			// the session's command service (registered on the session scoped
+			// services) plus this scoped editor service, so they operate on
+			// the session's tabs / workspace instead of the main window's.
+			const sessionPart = part as EditorPart;
+			const scopedEditorService = this.instantiationService.invokeFunction(accessor => accessor.get(IEditorService)).createScoped(sessionPart, this._store);
+			sessionPartInstantiationService = this._register(sessionPart.scopedInstantiationService.createChild(new ServiceCollection(
+				[IEditorService, scopedEditorService]
+			)));
+			this.mapSessionPartToInstantiationService.set(sessionPartId, sessionPartInstantiationService);
 		}
 
-		return this.mapPartToInstantiationService.get(part.windowId) ?? this.instantiationService;
+		return sessionPartInstantiationService;
 	}
 
 	//#endregion
@@ -227,7 +238,6 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 		// Keep track and register the part
 		this.sessionEditorPartsBySessionId.set(session.context.sessionId, part);
 		this.sessionEditorPartsByPartId.set(partId, part);
-		this.mapSessionPartToInstantiationService.set(partId, session.scopedInstantiationService);
 		this._register(this.registerPart(part));
 
 		// Make the part the most recent active part for its document so that
