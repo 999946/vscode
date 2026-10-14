@@ -39,7 +39,7 @@ import './services/search/browser/searchService.js';
 import './services/textfile/browser/browserTextFileService.js';
 import './services/keybinding/browser/keyboardLayoutService.js';
 import './services/extensions/browser/extensionService.js';
-import './services/workspaceSession/browser/workspaceSessionService.js';
+import './services/workspaceSession/browser/browserWorkspaceSessionService.js';
 import './services/extensionManagement/browser/extensionsProfileScannerService.js';
 import './services/extensions/browser/extensionsScannerService.js';
 import './services/extensionManagement/browser/webExtensionsScannerService.js';

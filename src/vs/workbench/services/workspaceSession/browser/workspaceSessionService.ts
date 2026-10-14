@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { URI } from '../../../../base/common/uri.js';
 import { Schemas } from '../../../../base/common/network.js';
@@ -29,10 +29,15 @@ import { WorkspaceTrustEnablementService, WorkspaceTrustManagementService } from
 import { IWorkspaceSession, IWorkspaceContext, WorkspaceSessionState } from '../common/workspaceSession.js';
 import { IWorkspaceSessionService } from '../common/workspaceSessionService.js';
 import { IExtensionService } from '../../extensions/common/extensions.js';
-import { ExtensionService } from '../../extensions/browser/extensionService.js';
-import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 
-export class WorkspaceSessionService extends Disposable implements IWorkspaceSessionService {
+/**
+ * Extension service scoped to a session. Both implementations
+ * (ExtensionService and NativeExtensionService) extend Disposable, but the
+ * IExtensionService interface does not declare dispose.
+ */
+export type SessionExtensionService = IExtensionService & IDisposable;
+
+export abstract class WorkspaceSessionService extends Disposable implements IWorkspaceSessionService {
 
 	declare readonly _serviceBrand: undefined;
 
@@ -152,7 +157,7 @@ export class WorkspaceSessionService extends Disposable implements IWorkspaceSes
 		//    extension host instance, bound to this session's workspace context
 		//    service and storage. Resolved from the child service collection, so
 		//    the extension host sees this session's workspace in its init data.
-		const extensionService = scopedInstantiationService.createInstance(ExtensionService);
+		const extensionService = this.createExtensionService(scopedInstantiationService);
 		services.set(IExtensionService, extensionService);
 
 		// Build the session
@@ -216,6 +221,14 @@ export class WorkspaceSessionService extends Disposable implements IWorkspaceSes
 		return [];
 	}
 
+	/**
+	 * Creates the extension service scoped to a new session. Implemented by
+	 * platform-specific subclasses (browser vs. native) so that importing the
+	 * base class never triggers the extension service module's registration
+	 * side effects.
+	 */
+	protected abstract createExtensionService(scopedInstantiationService: IInstantiationService): SessionExtensionService;
+
 	private generateSessionId(workspace: IAnyWorkspaceIdentifier): string {
 		// Stable, readable session ids derived from the workspace identity
 		// plus a running counter to guarantee uniqueness inside the window.
@@ -244,7 +257,7 @@ class WorkspaceSession extends Disposable implements IWorkspaceSession {
 		storageService: BrowserStorageService,
 		workspaceService: WorkspaceService,
 		workspaceTrustManagementService: WorkspaceTrustManagementService,
-		extensionService: ExtensionService,
+		extensionService: SessionExtensionService,
 		logService: ILogService,
 	) {
 		super();
@@ -273,5 +286,3 @@ class WorkspaceSession extends Disposable implements IWorkspaceSession {
 		super.dispose();
 	}
 }
-
-registerSingleton(IWorkspaceSessionService, WorkspaceSessionService, InstantiationType.Delayed);

@@ -5,7 +5,7 @@
 
 import { localize } from '../../../../nls.js';
 import { EditorGroupLayout, GroupActivationReason, GroupDirection, GroupLocation, GroupOrientation, GroupsArrangement, GroupsOrder, IAuxiliaryEditorPart, IEditorGroupContextKeyProvider, IEditorDropTargetDelegate, IEditorGroupsService, IEditorSideGroup, IEditorWorkingSet, IFindGroupScope, IMergeGroupOptions, IEditorWorkingSetOptions, IEditorPart, IModalEditorPart, IEditorGroupActivationEvent } from '../../../services/editor/common/editorGroupsService.js';
-import { Emitter } from '../../../../base/common/event.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableMap, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { GroupIdentifier, IEditorPartOptions } from '../../../common/editor.js';
 import { EditorPart, IEditorPartUIState, MainEditorPart } from './editorPart.js';
@@ -30,6 +30,8 @@ import { IStatusbarService } from '../../../services/statusbar/browser/statusbar
 import { mainWindow } from '../../../../base/browser/window.js';
 import { IModalEditorPartOptions } from '../../../../platform/editor/common/editor.js';
 import { EditorPartModalVisibleContext } from '../../../common/contextkeys.js';
+import { Parts } from '../../../services/layout/browser/layoutService.js';
+import { IWorkspaceSession } from '../../../services/workspaceSession/common/workspaceSession.js';
 
 interface IEditorPartsUIState {
 	readonly auxiliary: IAuxiliaryEditorPartState[];
@@ -71,6 +73,21 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 	// the main window) so this list also acts as a per-window MRU when
 	// filtered by document. See `getMostRecentlyActivePartByDocument`.
 	private mostRecentActiveParts: EditorPart[];
+
+	//#region Session editor parts
+
+	// A session editor part is a full editor part that renders a workspace
+	// session side-by-side with the main editor part in the same window.
+	// It is scoped to the session's services so it has its own set of
+	// tabs / editor groups and its own storage.
+	private readonly sessionEditorPartsBySessionId = new Map<string /* sessionId */, EditorPart>();
+	private readonly sessionEditorPartsByPartId = new Map<string /* part id */, EditorPart>();
+	private readonly mapSessionPartToInstantiationService = new Map<string /* part id */, IInstantiationService>();
+
+	private readonly _onDidCreateSessionEditorPart = this._register(new Emitter<IEditorPart>());
+	readonly onDidCreateSessionEditorPart: Event<IEditorPart> = this._onDidCreateSessionEditorPart.event;
+
+	//#endregion
 
 	constructor(
 		@IInstantiationService protected readonly instantiationService: IInstantiationService,
@@ -151,6 +168,13 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 			return this.modalPartInstantiationService;
 		}
 
+		// Session Part (if created)
+		const sessionPartId = (part as EditorPart).getId();
+		const sessionPartInstantiationService = this.mapSessionPartToInstantiationService.get(sessionPartId);
+		if (sessionPartInstantiationService) {
+			return sessionPartInstantiationService;
+		}
+
 		return this.mapPartToInstantiationService.get(part.windowId) ?? this.instantiationService;
 	}
 
@@ -174,6 +198,71 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 		this._onDidCreateAuxiliaryEditorPart.fire(part);
 
 		return part;
+	}
+
+	//#endregion
+
+	//#region Session Editor Parts
+
+	createSessionEditorPart(session: IWorkspaceSession): IEditorPart {
+
+		// Reuse existing part for this session
+		const existingPart = this.sessionEditorPartsBySessionId.get(session.context.sessionId);
+		if (existingPart) {
+			return existingPart;
+		}
+
+		// Unique part id and label for this session's editor part. The part
+		// registers in the layout service's `parts` map by this id, so it must
+		// not collide with the main part id (`Parts.EDITOR_PART`).
+		const sessionIndex = this.sessionEditorPartsBySessionId.size;
+		const partId = `${Parts.EDITOR_PART}.session.${sessionIndex}`;
+		const groupsLabel = localize('sessionEditorPartLabel', "Workspace {0}", sessionIndex + 1);
+
+		// A session editor part is created through the session's scoped
+		// instantiation service, so that the workspace-scoped services it
+		// depends on (configuration, storage, ...) resolve to this session.
+		const part = session.scopedInstantiationService.createInstance(EditorPart, this, partId, groupsLabel, mainWindow.vscodeWindowId);
+
+		// Keep track and register the part
+		this.sessionEditorPartsBySessionId.set(session.context.sessionId, part);
+		this.sessionEditorPartsByPartId.set(partId, part);
+		this.mapSessionPartToInstantiationService.set(partId, session.scopedInstantiationService);
+		this._register(this.registerPart(part));
+
+		// Make the part the most recent active part for its document so that
+		// command dispatch and focus routing prefer it. See `getPartByDocument`.
+		this.mostRecentActiveParts = [part, ...this.mostRecentActiveParts.filter(p => p !== part)];
+
+		// Dispose the editor part again when the session is disposed
+		this._register(part.onWillDispose(() => {
+			this.sessionEditorPartsBySessionId.delete(session.context.sessionId);
+			this.sessionEditorPartsByPartId.delete(partId);
+			this.mapSessionPartToInstantiationService.delete(partId);
+			this.mostRecentActiveParts = this.mostRecentActiveParts.filter(p => p !== part);
+			this.unregisterPart(part);
+		}));
+
+		// Create the part into a container next to the main editor part. The
+		// part is an `ISerializableView`; the layout service renders it into
+		// the workbench grid side-by-side with the main editor part.
+		const container = mainWindow.document.createElement('div');
+		container.classList.add('part', 'editor');
+		container.id = partId;
+		part.create(container, { restorePreviousState: false });
+
+		// Events
+		this._onDidAddGroup.fire(part.activeGroup);
+		this._onDidCreateSessionEditorPart.fire(part);
+
+		return part;
+	}
+
+	/**
+	 * Returns the session editor part created for the given session, if any.
+	 */
+	getSessionEditorPart(sessionId: string): IEditorPart | undefined {
+		return this.sessionEditorPartsBySessionId.get(sessionId);
 	}
 
 	//#endregion
@@ -1037,6 +1126,23 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 	}
 
 	//#endregion
+
+	override dispose(): void {
+
+		// Session editor parts live as long as their session, not as long as
+		// this service. Disposing this service (e.g. the window shuts down)
+		// must therefore dispose every session editor part explicitly. Iterate
+		// over a snapshot: disposing a part fires `onWillDispose` which deletes
+		// from these maps.
+		for (const part of Array.from(this.sessionEditorPartsBySessionId.values())) {
+			part.dispose();
+		}
+		this.sessionEditorPartsBySessionId.clear();
+		this.sessionEditorPartsByPartId.clear();
+		this.mapSessionPartToInstantiationService.clear();
+
+		super.dispose();
+	}
 }
 
 registerSingleton(IEditorGroupsService, EditorParts, InstantiationType.Eager);

@@ -58,6 +58,7 @@ import './browser/parts/titlebar/menubar.contribution.js';
 
 //#region --- workbench services
 
+import './contrib/workspaceSession/browser/workspaceSessionEditorPart.contribution.js';
 import '../platform/actions/common/actions.contribution.js';
 import '../platform/undoRedo/common/undoRedoService.js';
 import '../platform/mcp/common/mcpResourceScannerService.js';

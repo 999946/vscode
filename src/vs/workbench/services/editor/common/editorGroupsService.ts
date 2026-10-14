@@ -17,6 +17,7 @@ import { IGroupModelChangeEvent } from '../../../common/editor/editorGroupModel.
 import { IRectangle } from '../../../../platform/window/common/window.js';
 import { IMenuChangeEvent, MenuId } from '../../../../platform/actions/common/actions.js';
 import { DeepPartial } from '../../../../base/common/types.js';
+import { IWorkspaceSession } from '../../workspaceSession/common/workspaceSession.js';
 
 export const IEditorGroupsService = createDecorator<IEditorGroupsService>('editorGroupsService');
 
@@ -518,6 +519,11 @@ export interface IEditorPart extends IEditorGroupsContainer {
 	 * Find out if the editor layout is currently centered.
 	 */
 	isLayoutCentered(): boolean;
+
+	/**
+	 * Disposes the editor part and releases all resources owned by it.
+	 */
+	dispose(): void;
 }
 
 export interface IAuxiliaryEditorPart extends IEditorPart {
@@ -655,6 +661,11 @@ export interface IEditorGroupsService extends IEditorGroupsContainer {
 	readonly onDidCreateAuxiliaryEditorPart: Event<IAuxiliaryEditorPart>;
 
 	/**
+	 * An event for when a new session editor part is created.
+	 */
+	readonly onDidCreateSessionEditorPart: Event<IEditorPart>;
+
+	/**
 	 * Provides access to the main window editor part.
 	 */
 	readonly mainPart: IEditorPart;
@@ -679,6 +690,21 @@ export interface IEditorGroupsService extends IEditorGroupsContainer {
 	 * in there at the optional position and size on screen.
 	 */
 	createAuxiliaryEditorPart(options?: { bounds?: Partial<IRectangle>; compact?: boolean; alwaysOnTop?: boolean }): Promise<IAuxiliaryEditorPart>;
+
+	/**
+	 * Creates a session editor part: a full editor part that renders the
+	 * given workspace session side-by-side with the main editor part in the
+	 * same window. The part is scoped to the session's services, so it has
+	 * its own set of tabs / editor groups and its own storage.
+	 *
+	 * Returns the existing part if a part for this session already exists.
+	 */
+	createSessionEditorPart(session: IWorkspaceSession): IEditorPart;
+
+	/**
+	 * Returns the session editor part created for the given session, if any.
+	 */
+	getSessionEditorPart(sessionId: string): IEditorPart | undefined;
 
 	/**
 	 * Creates a modal editor part that shows in a modal overlay

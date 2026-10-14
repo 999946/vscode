@@ -1684,6 +1684,21 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		this.workbenchGrid = workbenchGrid;
 		this.workbenchGrid.edgeSnapping = this.state.runtime.mainWindowFullscreen;
 
+		// Session editor parts (one per workspace session, rendered side-by-side
+		// with the main editor part) are added to the grid when they are created.
+		this._register(this.editorGroupService.onDidCreateSessionEditorPart(part => {
+			if (part.windowId !== mainWindow.vscodeWindowId) {
+				return; // sessions are rendered in the main window only
+			}
+
+			this.workbenchGrid.addView(part as unknown as ISerializableView, Sizing.Distribute, this.editorPartView, Direction.Right);
+
+			// Remove the part from the grid again when it is disposed
+			Event.once(part.onWillDispose)(() => {
+				this.workbenchGrid.removeView(part as unknown as ISerializableView, Sizing.Distribute);
+			});
+		}));
+
 		for (const part of [titleBar, editorPart, activityBar, panelPart, sideBar, statusBar, auxiliaryBarPart, bannerPart]) {
 			this._register(part.onDidVisibilityChange(visible => {
 				if (!this.inMaximizedAuxiliaryBarTransition) {
