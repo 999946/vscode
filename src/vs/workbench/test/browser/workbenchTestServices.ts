@@ -909,9 +909,12 @@ export class TestEditorGroupsService implements IEditorGroupsService {
 	get sideGroup(): IEditorGroup { return this.groups[0]; }
 	get count(): number { return this.groups.length; }
 
+	get activePart(): IEditorPart { return this; }
+
 	getPart(group: number | IEditorGroup): IEditorPart { return this; }
 	createSessionEditorPart(_session: IWorkspaceSession): IEditorPart { throw new Error('Method not implemented.'); }
 	getSessionEditorPart(sessionId: string): IEditorPart | undefined { return undefined; }
+	isSessionEditorPart(_part: IEditorPart): boolean { return false; }
 	saveWorkingSet(name: string): IEditorWorkingSet { throw new Error('Method not implemented.'); }
 	getWorkingSets(): IEditorWorkingSet[] { throw new Error('Method not implemented.'); }
 	applyWorkingSet(workingSet: IEditorWorkingSet | 'empty', options?: IEditorWorkingSetOptions): Promise<boolean> { throw new Error('Method not implemented.'); }
@@ -1675,6 +1678,8 @@ export class TestEditorPart extends MainEditorPart implements IEditorGroupsServi
 	readonly parts: readonly IEditorPart[] = [this];
 	readonly activeModalEditorPart: IModalEditorPart | undefined = undefined;
 
+	get activePart(): IEditorPart { return this; }
+
 	readonly onDidCreateAuxiliaryEditorPart: Event<IAuxiliaryEditorPart> = Event.None;
 	readonly onDidCreateSessionEditorPart: Event<IEditorPart> = Event.None;
 
@@ -1717,6 +1722,7 @@ export class TestEditorPart extends MainEditorPart implements IEditorGroupsServi
 	getPart(group: number | IEditorGroup): IEditorPart { return this; }
 	createSessionEditorPart(_session: IWorkspaceSession): IEditorPart { throw new Error('Method not implemented.'); }
 	getSessionEditorPart(sessionId: string): IEditorPart | undefined { return undefined; }
+	isSessionEditorPart(_part: IEditorPart): boolean { return false; }
 
 	saveWorkingSet(name: string): IEditorWorkingSet { throw new Error('Method not implemented.'); }
 	getWorkingSets(): IEditorWorkingSet[] { throw new Error('Method not implemented.'); }

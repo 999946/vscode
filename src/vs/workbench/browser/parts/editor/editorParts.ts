@@ -275,6 +275,17 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 		return this.sessionEditorPartsBySessionId.get(sessionId);
 	}
 
+	/**
+	 * Returns whether the given editor part is a session editor part: a
+	 * dedicated editor part rendering a workspace session side-by-side with
+	 * the main editor part. Session parts are tracked in
+	 * `sessionEditorPartsByPartId`, so membership in that map is the exact
+	 * criterion (main / auxiliary / modal parts are never registered there).
+	 */
+	isSessionEditorPart(part: IEditorPart): boolean {
+		return this.sessionEditorPartsByPartId.has((part as EditorPart).getId());
+	}
+
 	//#endregion
 
 	//#region Modal Editor Part

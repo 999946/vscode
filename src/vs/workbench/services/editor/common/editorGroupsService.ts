@@ -676,6 +676,13 @@ export interface IEditorGroupsService extends IEditorGroupsContainer {
 	readonly parts: ReadonlyArray<IEditorPart>;
 
 	/**
+	 * The editor part that is currently active. The active part is the part
+	 * that has focus, or the part that was most recently focused for the
+	 * active document.
+	 */
+	readonly activePart: IEditorPart;
+
+	/**
 	 * Get the editor part that contains the group with the provided identifier.
 	 */
 	getPart(group: IEditorGroup | GroupIdentifier): IEditorPart;
@@ -705,6 +712,13 @@ export interface IEditorGroupsService extends IEditorGroupsContainer {
 	 * Returns the session editor part created for the given session, if any.
 	 */
 	getSessionEditorPart(sessionId: string): IEditorPart | undefined;
+
+	/**
+	 * Returns whether the given editor part is a session editor part: a
+	 * dedicated editor part rendering a workspace session side-by-side with
+	 * the main editor part.
+	 */
+	isSessionEditorPart(part: IEditorPart): boolean;
 
 	/**
 	 * Creates a modal editor part that shows in a modal overlay

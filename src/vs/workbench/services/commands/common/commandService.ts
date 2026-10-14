@@ -11,6 +11,7 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IExtensionService } from '../../extensions/common/extensions.js';
+import { IEditorGroupsService } from '../../editor/common/editorGroupsService.js';
 
 export class CommandService extends Disposable implements ICommandService {
 
@@ -96,12 +97,62 @@ export class CommandService extends Disposable implements ICommandService {
 		}
 		try {
 			this._onWillExecuteCommand.fire({ commandId: id, args });
-			const result = this._instantiationService.invokeFunction(command.handler, ...args);
+			const result = this._getCommandExecutionInstantiationService().invokeFunction(command.handler, ...args);
 			this._onDidExecuteCommand.fire({ commandId: id, args });
 			return Promise.resolve(result);
 		} catch (err) {
 			return Promise.reject(err);
 		}
+	}
+
+	// Resolved lazily (and cached) rather than injected in the constructor: the
+	// editor groups service depends transitively on this service
+	// (EditorParts -> AuxiliaryWindowService -> ... -> KeybindingService ->
+	// CommandService), so constructor injection would form a circular
+	// dependency. Commands only execute once the workbench is up, by which
+	// time the editor groups service is instantiated, so a lazy lookup is safe.
+	private _editorGroupsService: IEditorGroupsService | undefined;
+
+	/**
+	 * Returns the instantiation service used to invoke command handlers.
+	 *
+	 * Commands arrive through the window-level command service (command
+	 * palette, keybindings, menus and extension hosts). When a workspace
+	 * session editor part is currently active, handler dependencies are
+	 * resolved through that part's scoped dispatch service, so the command
+	 * operates on the session's workspace / storage / editor part instead of
+	 * the main window's. When the main editor part (or any auxiliary part) is
+	 * active, dependencies resolve through this service's own instantiation
+	 * service as before.
+	 */
+	private _getCommandExecutionInstantiationService(): IInstantiationService {
+		const editorGroupsService = this._getEditorGroupsService();
+		if (!editorGroupsService) {
+			return this._instantiationService;
+		}
+
+		const activePart = editorGroupsService.activePart;
+		if (!editorGroupsService.isSessionEditorPart(activePart)) {
+			return this._instantiationService;
+		}
+
+		return editorGroupsService.getScopedInstantiationService(activePart);
+	}
+
+	private _getEditorGroupsService(): IEditorGroupsService | undefined {
+		if (!this._editorGroupsService) {
+			this._editorGroupsService = this._instantiationService.invokeFunction(accessor => {
+				try {
+					return accessor.get(IEditorGroupsService);
+				} catch {
+					// Not registered: standalone editor, or unit tests that
+					// exercise the command service in isolation.
+					return undefined;
+				}
+			});
+		}
+
+		return this._editorGroupsService;
 	}
 
 	public override dispose(): void {
