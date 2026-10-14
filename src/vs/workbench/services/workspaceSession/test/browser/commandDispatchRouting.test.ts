@@ -142,7 +142,7 @@ suite('WorkspaceSession - Global Command Routing', () => {
 		const globalCmd = instantiationService.invokeFunction(a => a.get(ICommandService));
 
 		const session = createTestSession(instantiationService, 'session-routing', '/routing');
-		const sessionPart = parts.createSessionEditorPart(session);
+		parts.createSessionEditorPart(session);
 		assert.strictEqual(await globalCmd.executeCommand(routeCmdId), URI.file('/routing').toString());
 
 		// Focus the main part's active group; group focus propagates to the

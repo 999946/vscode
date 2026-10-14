@@ -5,9 +5,11 @@
 
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
+import { IAnyWorkspaceIdentifier } from '../../../../platform/workspace/common/workspace.js';
 import { ExtensionService } from '../../extensions/browser/extensionService.js';
+import { BrowserStorageService } from '../../storage/browser/storageService.js';
 import { IWorkspaceSessionService } from '../common/workspaceSessionService.js';
-import { SessionExtensionService, WorkspaceSessionService } from './workspaceSessionService.js';
+import { SessionExtensionService, SessionStorageService, WorkspaceSessionService } from './workspaceSessionService.js';
 
 /**
  * Web implementation of the workspace session service. Sessions run an
@@ -20,6 +22,10 @@ export class BrowserWorkspaceSessionService extends WorkspaceSessionService {
 
 	override createExtensionService(scopedInstantiationService: IInstantiationService): SessionExtensionService {
 		return scopedInstantiationService.createInstance(ExtensionService);
+	}
+
+	override createStorageService(workspace: IAnyWorkspaceIdentifier): SessionStorageService {
+		return new BrowserStorageService(workspace, this.userDataProfileService, this.logService);
 	}
 }
 

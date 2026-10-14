@@ -25,7 +25,6 @@ import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/e
 import { WorkspaceService } from '../../configuration/browser/configurationService.js';
 import { IWorkbenchConfigurationService } from '../../configuration/common/configuration.js';
 import { ConfigurationCache } from '../../configuration/common/configurationCache.js';
-import { BrowserStorageService } from '../../storage/browser/storageService.js';
 import { IWorkspaceTrustEnablementService, IWorkspaceTrustManagementService } from '../../../../platform/workspace/common/workspaceTrust.js';
 import { WorkspaceTrustEnablementService, WorkspaceTrustManagementService } from '../../workspaces/common/workspaceTrust.js';
 import { IWorkspaceSession, IWorkspaceContext, WorkspaceSessionState } from '../common/workspaceSession.js';
@@ -38,6 +37,14 @@ import { IExtensionService } from '../../extensions/common/extensions.js';
  * IExtensionService interface does not declare dispose.
  */
 export type SessionExtensionService = IExtensionService & IDisposable;
+
+/**
+ * Storage service scoped to a session. Sessions need initialize() and
+ * close() beyond the IStorageService interface (neither is declared
+ * there): initialize() kicks off loading the underlying stores, close()
+ * flushes and releases them on session disposal.
+ */
+export type SessionStorageService = IStorageService & { initialize(): Promise<void>; close(): void | Promise<void> };
 
 export abstract class WorkspaceSessionService extends Disposable implements IWorkspaceSessionService {
 
@@ -60,16 +67,16 @@ export abstract class WorkspaceSessionService extends Disposable implements IWor
 	private sessionCount = 0;
 
 	constructor(
-		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@IFileService private readonly fileService: IFileService,
-		@IRemoteAgentService private readonly remoteAgentService: IRemoteAgentService,
-		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
-		@IPolicyService private readonly policyService: IPolicyService,
-		@ILogService private readonly logService: ILogService,
-		@IRemoteAuthorityResolverService private readonly remoteAuthorityResolverService: IRemoteAuthorityResolverService,
-		@IUserDataProfileService private readonly userDataProfileService: IUserDataProfileService,
-		@IUserDataProfilesService private readonly userDataProfilesService: IUserDataProfilesService,
-		@IBrowserWorkbenchEnvironmentService private readonly environmentService: IBrowserWorkbenchEnvironmentService,
+		@IInstantiationService protected readonly instantiationService: IInstantiationService,
+		@IFileService protected readonly fileService: IFileService,
+		@IRemoteAgentService protected readonly remoteAgentService: IRemoteAgentService,
+		@IUriIdentityService protected readonly uriIdentityService: IUriIdentityService,
+		@IPolicyService protected readonly policyService: IPolicyService,
+		@ILogService protected readonly logService: ILogService,
+		@IRemoteAuthorityResolverService protected readonly remoteAuthorityResolverService: IRemoteAuthorityResolverService,
+		@IUserDataProfileService protected readonly userDataProfileService: IUserDataProfileService,
+		@IUserDataProfilesService protected readonly userDataProfilesService: IUserDataProfilesService,
+		@IBrowserWorkbenchEnvironmentService protected readonly environmentService: IBrowserWorkbenchEnvironmentService,
 	) {
 		super();
 	}
@@ -134,8 +141,8 @@ export abstract class WorkspaceSessionService extends Disposable implements IWor
 		services.set(IWorkspaceContextService, workspaceService);
 		services.set(IWorkbenchConfigurationService, workspaceService);
 
-		// 2. Storage service scoped to this workspace (IndexedDB per workspace id)
-		const storageService = new BrowserStorageService(workspace, this.userDataProfileService, this.logService);
+		// 2. Storage service scoped to this workspace (per-workspace database)
+		const storageService = this.createStorageService(workspace);
 		await storageService.initialize();
 		services.set(IStorageService, storageService);
 
@@ -234,6 +241,16 @@ export abstract class WorkspaceSessionService extends Disposable implements IWor
 	}
 
 	/**
+	 * Creates the storage service scoped to a new session. Sessions get their
+	 * own storage instance addressed by the workspace id, so each workspace
+	 * session keeps its state in its own database (native: per-workspace
+	 * state.vscdb; browser: per-workspace IndexedDB). Implemented by
+	 * platform-specific subclasses so that importing the base class never
+	 * triggers platform storage module registration side effects.
+	 */
+	protected abstract createStorageService(workspace: IAnyWorkspaceIdentifier): SessionStorageService;
+
+	/**
 	 * Creates the extension service scoped to a new session. Implemented by
 	 * platform-specific subclasses (browser vs. native) so that importing the
 	 * base class never triggers the extension service module's registration
@@ -266,7 +283,7 @@ class WorkspaceSession extends Disposable implements IWorkspaceSession {
 	constructor(
 		readonly context: IWorkspaceContext,
 		readonly scopedInstantiationService: IInstantiationService,
-		storageService: BrowserStorageService,
+		storageService: SessionStorageService,
 		workspaceService: WorkspaceService,
 		workspaceTrustManagementService: WorkspaceTrustManagementService,
 		extensionService: SessionExtensionService,
