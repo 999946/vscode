@@ -8,6 +8,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { mock } from '../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import type { IGitService } from '../../../contrib/git/common/gitService.js';
+import type { ILogService } from '../../../../platform/log/common/log.js';
 import { MainThreadGitExtensionService } from '../../browser/mainThreadGitExtensionService.js';
 import { GitRefTypeDto, type ExtHostGitExtensionShape, type GitRepositoryStateDto } from '../../common/extHost.protocol.js';
 import { SingleProxyRPCProtocol } from '../common/testRPCProtocol.js';
@@ -37,6 +38,7 @@ suite('MainThreadGitExtensionService', () => {
 		const service = disposables.add(new MainThreadGitExtensionService(
 			SingleProxyRPCProtocol(proxy),
 			new class extends mock<IGitService>() { },
+			new class extends mock<ILogService>() { },
 		));
 
 		const firstRepository = await service.openRepository(rootUri);
