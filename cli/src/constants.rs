@@ -56,20 +56,20 @@ pub const TUNNEL_SERVICE_USER_AGENT_ENV_VAR: &str = "TUNNEL_SERVICE_USER_AGENT";
 /// Application name as it appears on the CLI.
 pub const APPLICATION_NAME: &str = match option_env!("VSCODE_CLI_APPLICATION_NAME") {
 	Some(n) => n,
-	None => "code",
+	None => "para",
 };
 
 /// Full name of the product with its version.
 pub const PRODUCT_NAME_LONG: &str = match option_env!("VSCODE_CLI_NAME_LONG") {
 	Some(n) => n,
-	None => "Code - OSS",
+	None => "ParaCode",
 };
 
 /// Name of the application without quality information.
 pub const QUALITYLESS_PRODUCT_NAME: &str = match option_env!("VSCODE_CLI_QUALITYLESS_PRODUCT_NAME")
 {
 	Some(n) => n,
-	None => "Code",
+	None => "ParaCode",
 };
 
 /// Short product name, mirroring `product.json`'s `nameShort` (e.g. `Code -
@@ -79,7 +79,7 @@ pub const QUALITYLESS_PRODUCT_NAME: &str = match option_env!("VSCODE_CLI_QUALITY
 /// passed `product.nameShort`).
 pub const PRODUCT_NAME_SHORT: &str = match option_env!("VSCODE_CLI_NAME_SHORT") {
 	Some(n) => n,
-	None => "Code - OSS",
+	None => "ParaCode",
 };
 
 /// Name of the application without quality information.
@@ -104,7 +104,7 @@ const NONINTERACTIVE_VAR: &str = "VSCODE_CLI_NONINTERACTIVE";
 /// Default data CLI data directory.
 pub const DEFAULT_DATA_PARENT_DIR: &str = match option_env!("VSCODE_CLI_DATA_FOLDER_NAME") {
 	Some(n) => n,
-	None => ".vscode-oss",
+	None => ".paracode",
 };
 
 /// Canonical, machine-wide parent directory used to coordinate the agent
@@ -115,7 +115,7 @@ pub const DEFAULT_DATA_PARENT_DIR: &str = match option_env!("VSCODE_CLI_DATA_FOL
 /// directories).
 pub const SERVER_DATA_PARENT_DIR: &str = match option_env!("VSCODE_CLI_SERVER_DATA_FOLDER_NAME") {
 	Some(n) => n,
-	None => ".vscode-server-oss",
+	None => ".paracode-server",
 };
 
 pub fn get_default_user_agent() -> String {

@@ -373,7 +373,7 @@ suite('PullRequestQueryService', () => {
 				status: 'COMPLETED',
 				conclusion: 'SUCCESS',
 				isRequired: true,
-				checkSuite: { workflowRun: { workflow: { name: 'Code OSS' } } },
+				checkSuite: { workflowRun: { workflow: { name: 'ParaCode' } } },
 			};
 			const refusal = gitHubGraphQLResponse(undefined, [{
 				type: 'FORBIDDEN',
@@ -403,7 +403,7 @@ suite('PullRequestQueryService', () => {
 				fragment: 'checks',
 				value: {
 					headSha: 'head-1',
-					checks: [{ id: '1', type: 'checkRun', name: 'CI', status: 'COMPLETED', conclusion: 'SUCCESS', required: true, detailsUrl: undefined, workflowName: 'Code OSS' }],
+					checks: [{ id: '1', type: 'checkRun', name: 'CI', status: 'COMPLETED', conclusion: 'SUCCESS', required: true, detailsUrl: undefined, workflowName: 'ParaCode' }],
 					requirednessComplete: true,
 					expectedSuites: [],
 					expectedSuitesComplete: false,

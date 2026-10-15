@@ -76,12 +76,12 @@ suite('buildUpgradeUrlWithRedirect', () => {
 	test('undefined quality defaults to insiders.vscode.dev host', () => {
 		const result = buildUpgradeUrlWithRedirect(
 			'https://github.com/github-copilot/upgrade?utm_source=vscode',
-			'code-oss',
+			'paracode',
 			undefined
 		);
 		const { redirectHost, vscodeUri } = parseRedirectUrl(result);
 		assert.strictEqual(redirectHost, 'insiders.vscode.dev');
-		assert.strictEqual(vscodeUri, 'code-oss://GitHub.copilot-chat/upgrade-success');
+		assert.strictEqual(vscodeUri, 'paracode://GitHub.copilot-chat/upgrade-success');
 	});
 
 	test('appends with & when base URL already has query params', () => {

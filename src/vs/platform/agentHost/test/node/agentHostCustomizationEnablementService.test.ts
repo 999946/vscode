@@ -371,7 +371,7 @@ suite('AgentHostCustomizationEnablementService', () => {
 	});
 
 	test('retains host-owned MCP decisions when an unbundled client republish asserts enabled', async () => {
-		const pluginSource = URI.parse('file:///Users/connor/.vscode-oss-dev-dev/agent-plugins/github.com/microsoft/azure-skills/.github/plugins/azure-skills');
+		const pluginSource = URI.parse('file:///Users/connor/.para-dev-dev/agent-plugins/github.com/microsoft/azure-skills/.github/plugins/azure-skills');
 		const azureSkillsPlugin: ICustomizationEnablementTarget = {
 			id: 'azure-skills-plugin',
 			type: CustomizationType.Plugin,
@@ -380,10 +380,10 @@ suite('AgentHostCustomizationEnablementService', () => {
 			isClientBundled: true,
 		};
 		const azure: ICustomizationEnablementTarget = {
-			id: 'file:///Users/connor/.vscode-oss-dev/agentPlugins/file-azure-skills/19ff2ac36f2/.mcp.json#mcp=azure',
+			id: 'file:///Users/connor/.para-dev/agentPlugins/file-azure-skills/19ff2ac36f2/.mcp.json#mcp=azure',
 			type: CustomizationType.McpServer,
 			name: 'azure',
-			source: URI.parse('file:///Users/connor/.vscode-oss-dev/agentPlugins/file-azure-skills/19ff2ac36f2/.mcp.json'),
+			source: URI.parse('file:///Users/connor/.para-dev/agentPlugins/file-azure-skills/19ff2ac36f2/.mcp.json'),
 			owningPluginSource: pluginSource,
 			isClientBundled: false,
 		};
@@ -429,11 +429,11 @@ suite('AgentHostCustomizationEnablementService', () => {
 			},
 			persisted: {
 				global: {
-					'file:///Users/connor/.vscode-oss-dev-dev/agent-plugins/github.com/microsoft/azure-skills/.github/plugins/azure-skills#mcp=azure': false,
+					'file:///Users/connor/.para-dev-dev/agent-plugins/github.com/microsoft/azure-skills/.github/plugins/azure-skills#mcp=azure': false,
 				},
 				workingDirectories: {
 					'file:///repo': {
-						'file:///Users/connor/.vscode-oss-dev-dev/agent-plugins/github.com/microsoft/azure-skills/.github/plugins/azure-skills#mcp=azure': true,
+						'file:///Users/connor/.para-dev-dev/agent-plugins/github.com/microsoft/azure-skills/.github/plugins/azure-skills#mcp=azure': true,
 					},
 				},
 			},

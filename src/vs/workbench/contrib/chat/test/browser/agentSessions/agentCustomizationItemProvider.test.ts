@@ -300,7 +300,7 @@ suite('AgentCustomizationItemProvider', () => {
 				id: skillUri,
 				uri: skillUri,
 				name: 'launch',
-				description: 'Launch Code OSS.',
+				description: 'Launch ParaCode.',
 			}],
 		}];
 

@@ -235,7 +235,7 @@ mod tests {
 	fn default_windows_path_uses_appdata() {
 		let mut env = env_with_home(r"C:\Users\test");
 		env.appdata = Some(r"C:\Users\test\AppData\Roaming".to_string());
-		let path = default_user_data_path_with("Code - OSS", UserDataOs::Windows, &env);
+		let path = default_user_data_path_with("ParaCode", UserDataOs::Windows, &env);
 		// Compared as a raw string (not `PathBuf`) so the assertion still
 		// catches host-native (as opposed to target-OS-aware) joins on
 		// hosts where `Path`'s separator-normalizing `PartialEq` would
@@ -243,7 +243,7 @@ mod tests {
 		// `\` as equivalent component separators).
 		assert_eq!(
 			path.to_string_lossy(),
-			r"C:\Users\test\AppData\Roaming\Code - OSS"
+			r"C:\Users\test\AppData\Roaming\ParaCode"
 		);
 	}
 
@@ -251,20 +251,20 @@ mod tests {
 	fn default_windows_path_falls_back_to_userprofile() {
 		let mut env = env_with_home(r"C:\Users\test");
 		env.userprofile = Some(r"C:\Users\test".to_string());
-		let path = default_user_data_path_with("Code - OSS", UserDataOs::Windows, &env);
+		let path = default_user_data_path_with("ParaCode", UserDataOs::Windows, &env);
 		assert_eq!(
 			path.to_string_lossy(),
-			r"C:\Users\test\AppData\Roaming\Code - OSS"
+			r"C:\Users\test\AppData\Roaming\ParaCode"
 		);
 	}
 
 	#[test]
 	fn default_macos_path_uses_application_support() {
 		let env = env_with_home("/Users/test");
-		let path = default_user_data_path_with("Code - OSS", UserDataOs::MacOs, &env);
+		let path = default_user_data_path_with("ParaCode", UserDataOs::MacOs, &env);
 		assert_eq!(
 			path.to_string_lossy(),
-			"/Users/test/Library/Application Support/Code - OSS"
+			"/Users/test/Library/Application Support/ParaCode"
 		);
 	}
 
@@ -272,22 +272,22 @@ mod tests {
 	fn default_linux_path_uses_xdg_config_home() {
 		let mut env = env_with_home("/home/test");
 		env.xdg_config_home = Some("/home/test/.config".to_string());
-		let path = default_user_data_path_with("Code - OSS", UserDataOs::Linux, &env);
-		assert_eq!(path.to_string_lossy(), "/home/test/.config/Code - OSS");
+		let path = default_user_data_path_with("ParaCode", UserDataOs::Linux, &env);
+		assert_eq!(path.to_string_lossy(), "/home/test/.config/ParaCode");
 	}
 
 	#[test]
 	fn default_linux_path_falls_back_to_home_dot_config() {
 		let env = env_with_home("/home/test");
-		let path = default_user_data_path_with("Code - OSS", UserDataOs::Linux, &env);
-		assert_eq!(path.to_string_lossy(), "/home/test/.config/Code - OSS");
+		let path = default_user_data_path_with("ParaCode", UserDataOs::Linux, &env);
+		assert_eq!(path.to_string_lossy(), "/home/test/.config/ParaCode");
 	}
 
 	#[test]
 	fn vscode_portable_overrides_default() {
 		let mut env = env_with_home("/home/test");
 		env.vscode_portable = Some("/mnt/portable".to_string());
-		let path = resolve_user_data_path_with(None, "Code - OSS", UserDataOs::Linux, &env);
+		let path = resolve_user_data_path_with(None, "ParaCode", UserDataOs::Linux, &env);
 		assert_eq!(path, PathBuf::from("/mnt/portable/user-data"));
 	}
 
@@ -295,8 +295,8 @@ mod tests {
 	fn vscode_appdata_overrides_default() {
 		let mut env = env_with_home("/home/test");
 		env.vscode_appdata = Some("/mnt/appdata".to_string());
-		let path = resolve_user_data_path_with(None, "Code - OSS", UserDataOs::Linux, &env);
-		assert_eq!(path, PathBuf::from("/mnt/appdata/Code - OSS"));
+		let path = resolve_user_data_path_with(None, "ParaCode", UserDataOs::Linux, &env);
+		assert_eq!(path, PathBuf::from("/mnt/appdata/ParaCode"));
 	}
 
 	#[test]
@@ -306,7 +306,7 @@ mod tests {
 		env.vscode_appdata = Some("/mnt/appdata".to_string());
 		let path = resolve_user_data_path_with(
 			Some("/explicit/dir"),
-			"Code - OSS",
+			"ParaCode",
 			UserDataOs::Linux,
 			&env,
 		);
@@ -318,7 +318,7 @@ mod tests {
 		let env = env_with_home("/home/test");
 		let path = resolve_user_data_path_with(
 			Some("relative-dir"),
-			"Code - OSS",
+			"ParaCode",
 			UserDataOs::Linux,
 			&env,
 		);
@@ -328,7 +328,7 @@ mod tests {
 	#[test]
 	fn falls_back_to_platform_default_when_nothing_set() {
 		let env = env_with_home("/home/test");
-		let path = resolve_user_data_path_with(None, "Code - OSS", UserDataOs::Linux, &env);
-		assert_eq!(path, PathBuf::from("/home/test/.config/Code - OSS"));
+		let path = resolve_user_data_path_with(None, "ParaCode", UserDataOs::Linux, &env);
+		assert_eq!(path, PathBuf::from("/home/test/.config/ParaCode"));
 	}
 }

@@ -140,7 +140,7 @@ const server = http.createServer((req, res) => {
 		}
 
 		// Mocked Copilot endpoints. Only these get permissive CORS, so the web
-		// build (browser) of Code OSS can call them cross-origin.
+		// build (browser) of ParaCode can call them cross-origin.
 		if (endpoint && state.get(endpoint.id)?.active) {
 			const entry = state.get(endpoint.id)!;
 			setMockResponseHeaders(res);

@@ -43,7 +43,7 @@ const INCLUDE_UNAPPROVED_ACCOUNTS_OPTION = `${WORKBENCH_ONLY_SESSION_OPTION_PREF
  * Asks the GitHub provider whether GitHub links the Entra identity behind any of the given tokens
  * to a GitHub account. Handled in `extensions/github-authentication`, which revokes the token it
  * mints to find out when the GitHub host and the build allow it. Where they do not, such as in
- * Code - OSS (no client secret) or on a host without the revocation endpoint, the token is left
+ * ParaCode (no client secret) or on a host without the revocation endpoint, the token is left
  * to expire on its own.
  */
 const ENTRA_EXCHANGE_PROBE_OPTION = `${WORKBENCH_ONLY_SESSION_OPTION_PREFIX}EntraExchangeProbe`;

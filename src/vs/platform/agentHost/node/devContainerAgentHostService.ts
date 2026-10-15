@@ -331,7 +331,7 @@ export abstract class DevContainerAgentHostService extends Disposable implements
 				throw new Error(localize('devContainerAgentHost.unsupportedPlatform', "Unsupported Dev Container platform: {0} {1}", unameS.trim(), unameM.trim()));
 			}
 
-			const serverDataFolderName = this._productService.serverDataFolderName ?? '.vscode-server-oss';
+			const serverDataFolderName = this._productService.serverDataFolderName ?? '.paracode-server';
 			const quality = this._productService.quality || 'insider';
 			const cliCacheDir = await this._configureCaches(config.connectionId, upResult.containerId, serverDataFolderName, platform, exec, tokenSource.token);
 			const cliInstallation = await ensureRemoteAgentHostCliInstalled(exec, platform, {

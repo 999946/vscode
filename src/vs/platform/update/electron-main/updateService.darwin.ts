@@ -24,7 +24,7 @@ import { AvailableForDownload, IUpdate, State, StateType, UpdateType } from '../
 import { AbstractUpdateService, IUpdateURLOptions } from './abstractUpdateService.js';
 
 const GITHUB_RELEASES_URL = 'https://api.github.com/repos/999946/vscode/releases/latest';
-const UPDATE_DMG_ASSET_PREFIX = 'VSCode-darwin-';
+const UPDATE_DMG_ASSET_PREFIX = 'ParaCode-darwin-';
 /** Sibling of the running app that holds the pre-swap bundle until the new version proves it can launch. */
 const BACKUP_APP_SUFFIX = '.old';
 /** How long a backup bundle must be left untouched before it is considered stale and removable. */

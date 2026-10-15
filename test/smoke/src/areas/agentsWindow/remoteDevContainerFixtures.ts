@@ -162,7 +162,7 @@ function findTunnelCli(): ITunnelCli {
 				process.env.VSCODE_CLI_DATA_DIR,
 				path.join(os.homedir(), '.vscode-insiders', 'cli'),
 				path.join(os.homedir(), '.vscode', 'cli'),
-				path.join(os.homedir(), '.vscode-oss', 'cli'),
+				path.join(os.homedir(), '.paracode', 'cli'),
 				path.join(os.homedir(), '.vscode-cli-insiders'),
 				path.join(os.homedir(), '.vscode-cli'),
 				path.join(os.homedir(), '.vscode-cli-oss'),

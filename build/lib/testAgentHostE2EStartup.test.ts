@@ -26,11 +26,11 @@ test('Agent Host E2E startup reuses, repairs, forces and explicitly skips Electr
 		}));
 		await fs.writeFile(path.join(repoRoot, '.npmrc'), 'target="42.9.3"\nms_build_id="test"\n');
 		await fs.writeFile(path.join(repoRoot, 'product.json'), JSON.stringify({
-			nameLong: 'Code - OSS', nameShort: 'Code - OSS', applicationName: 'code-oss',
+			nameLong: 'ParaCode', nameShort: 'ParaCode', applicationName: 'para',
 		}));
 		const executable = process.platform === 'darwin'
-			? '.build/electron/Code - OSS.app/Contents/MacOS/Code - OSS'
-			: process.platform === 'win32' ? '.build/electron/Code - OSS.exe' : '.build/electron/code-oss';
+			? '.build/electron/ParaCode.app/Contents/MacOS/ParaCode'
+			: process.platform === 'win32' ? '.build/electron/ParaCode.exe' : '.build/electron/para';
 		await fs.mkdir(path.dirname(path.join(repoRoot, executable)), { recursive: true });
 		await fs.writeFile(path.join(repoRoot, executable), 'runtime', { mode: 0o755 });
 		await fs.writeFile(path.join(repoRoot, '.build/electron/version'), '42.9.3');

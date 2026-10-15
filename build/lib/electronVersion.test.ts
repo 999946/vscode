@@ -17,14 +17,14 @@ suite('Electron runtime reuse', () => {
 			try {
 				await fs.writeFile(path.join(repoRoot, '.npmrc'), 'target="42.9.3"\nms_build_id="test"\n');
 				await fs.writeFile(path.join(repoRoot, 'product.json'), JSON.stringify({
-					nameLong: 'Code - OSS',
-					nameShort: 'Code - OSS',
-					applicationName: 'code-oss',
+					nameLong: 'ParaCode',
+					nameShort: 'ParaCode',
+					applicationName: 'para',
 				}));
 				const electronDir = path.join(repoRoot, '.build', 'electron');
 				const executable = platform === 'darwin'
-					? path.join(electronDir, 'Code - OSS.app', 'Contents', 'MacOS', 'Code - OSS')
-					: path.join(electronDir, platform === 'win32' ? 'Code - OSS.exe' : 'code-oss');
+					? path.join(electronDir, 'ParaCode.app', 'Contents', 'MacOS', 'ParaCode')
+					: path.join(electronDir, platform === 'win32' ? 'ParaCode.exe' : 'para');
 				const results = [shouldDownloadElectron(repoRoot, {}, platform)];
 				await fs.mkdir(path.dirname(executable), { recursive: true });
 				await fs.writeFile(path.join(electronDir, 'version'), 'v42.9.3\n');
@@ -55,11 +55,11 @@ suite('Electron runtime reuse', () => {
 		const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'vscode-electron-reuse-'));
 		try {
 			await fs.writeFile(path.join(repoRoot, '.npmrc'), 'target="42.9.3"\nms_build_id="test"\n');
-			await fs.writeFile(path.join(repoRoot, 'product.json'), JSON.stringify({ applicationName: 'code-oss' }));
+			await fs.writeFile(path.join(repoRoot, 'product.json'), JSON.stringify({ applicationName: 'para' }));
 			const electronDir = path.join(repoRoot, '.build', 'electron');
 			await fs.mkdir(electronDir, { recursive: true });
 			await fs.writeFile(path.join(electronDir, 'version'), '42.9.3');
-			await fs.writeFile(path.join(electronDir, 'code-oss'), 'runtime', { mode: 0o644 });
+			await fs.writeFile(path.join(electronDir, 'para'), 'runtime', { mode: 0o644 });
 			assert.strictEqual(shouldDownloadElectron(repoRoot, {}, 'linux'), true);
 		} finally {
 			await fs.rm(repoRoot, { recursive: true, force: true });

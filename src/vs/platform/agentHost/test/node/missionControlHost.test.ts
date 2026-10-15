@@ -44,10 +44,10 @@ suite('Mission Control host integration', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
 	for (const [quality, nameShort, expected] of [
-		['stable', 'Visual Studio Code', 'VS Code'],
-		['insider', 'Visual Studio Code - Insiders', 'VS Code Insiders'],
-		[undefined, 'Code - OSS', 'VS Code OSS'],
-		[undefined, 'Code - OSS Dev', 'VS Code OSS'],
+		['stable', 'Visual Studio Code', 'ParaCode'],
+		['insider', 'Visual Studio Code - Insiders', 'ParaCode Insiders'],
+		[undefined, 'ParaCode', 'ParaCode'],
+		[undefined, 'ParaCode Dev', 'ParaCode'],
 		['exploration', 'Code - Exploration', 'Code - Exploration'],
 	] as const) {
 		test(`uses a machine-first name with the ${nameShort} application in parentheses`, () => {
@@ -71,7 +71,7 @@ suite('Mission Control host integration', () => {
 		const product = new class extends mock<IProductService>() {
 			override readonly quality = 'insider';
 		}();
-		assert.strictEqual(getMissionControlEnvironmentName(product), `${hostname().replace(/\.local$/i, '')} (VS Code Insiders)`);
+		assert.strictEqual(getMissionControlEnvironmentName(product), `${hostname().replace(/\.local$/i, '')} (ParaCode Insiders)`);
 	});
 
 	function createHost(instantiation = store.add(new TestInstantiationService()), stateManager?: AgentHostStateManager, providers?: IAgentHostProviderService, agentService?: IAgentService) {

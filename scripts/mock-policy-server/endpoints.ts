@@ -13,7 +13,7 @@
  *
  * For the default (github.com) provider these URLs are read verbatim from
  * `product.json` -> `defaultChatAgent.<productKey>`. These paths are served
- * under a system proxy rule so Code OSS, Stable/Insiders, the CLI, and SDK
+ * under a system proxy rule so ParaCode, Stable/Insiders, the CLI, and SDK
  * clients all exercise the same policy delivery path.
  *
  * Endpoints not marked `mockedByDefault` start in passthrough: the server
@@ -38,7 +38,7 @@ export interface EndpointDef {
 	id: string;
 	/** Human label for the GUI tab. */
 	label: string;
-	/** URL path the server serves / Code OSS calls. */
+	/** URL path the server serves / ParaCode calls. */
 	path: string;
 	/** Key under product.json `defaultChatAgent`. */
 	productKey: string;

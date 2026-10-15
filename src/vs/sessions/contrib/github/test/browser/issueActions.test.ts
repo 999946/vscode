@@ -55,7 +55,7 @@ class TestURLService extends mock<IURLService>() {
 	readonly opened: { readonly uri: URI; readonly options: IOpenURLOptions | undefined }[] = [];
 
 	override create(options?: Partial<UriComponents>): URI {
-		return URI.from({ scheme: 'code-oss', ...options });
+		return URI.from({ scheme: 'paracode', ...options });
 	}
 
 	override async open(uri: URI, options?: IOpenURLOptions): Promise<boolean> {
@@ -135,7 +135,7 @@ suite('Issue Actions', () => {
 			opened: openerService.opened,
 		}, {
 			handledUris: [{
-				scheme: 'code-oss',
+				scheme: 'paracode',
 				authority: 'github.vscode-pull-request-github',
 				path: '/open-issue-webview',
 				query: {

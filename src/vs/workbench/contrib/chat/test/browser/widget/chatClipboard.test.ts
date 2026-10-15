@@ -122,7 +122,7 @@ suite('ChatClipboard', () => {
 					toPortableMarkdown('Updated [src/a.ts](/Users/me/repo/src/a.ts) and [b.ts](c:/repo/b.ts).'),
 					toPortableMarkdown('See [config](file:///repo/config.json).'),
 					toPortableMarkdown('See [index.ts](http://_vscodecontentref_/0).'),
-					toPortableMarkdown('See [a.ts](code-oss://file/repo/a.ts).'),
+					toPortableMarkdown('See [a.ts](paracode://file/repo/a.ts).'),
 				],
 				['Updated `src/a.ts` and `b.ts`.', 'See `config`.', 'See `index.ts`.', 'See `a.ts`.']);
 		});

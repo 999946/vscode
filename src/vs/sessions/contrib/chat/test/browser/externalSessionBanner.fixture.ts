@@ -58,7 +58,7 @@ function renderBannerInChat({ container, disposableStore, theme }: ComponentFixt
 				[SESSIONS_LIST_GROUP_EXTERNAL_SESSIONS_SETTING]: sessionType !== undefined,
 			}));
 			registration.defineInstance(IProductService, new class extends mock<IProductService>() {
-				override readonly nameShort = 'Code - OSS';
+				override readonly nameShort = 'ParaCode';
 			});
 		},
 	});
@@ -95,7 +95,7 @@ function renderDisappearanceDialog({ container, disposableStore }: ComponentFixt
 		ChatExternalSessionsMode.Last7Days,
 		new Date(now - 8 * 24 * 60 * 60 * 1000),
 		now,
-		'Code - OSS'
+		'ParaCode'
 	);
 	if (typeof confirmation.detail !== 'string') {
 		throw new Error('Expected plain-text confirmation detail.');

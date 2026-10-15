@@ -1907,7 +1907,7 @@ suite('ProtocolServerHandler', () => {
 		let relayHandler: ProtocolServerHandler | undefined;
 		const registration = disposables.add(new MissionControlEnvironment({
 			userDataPath: userData,
-			name: 'VS Code OSS',
+			name: 'ParaCode',
 			fetch: fakeFetch,
 			attach: (relay, roots) => {
 				relayHandler = new ProtocolServerHandler(

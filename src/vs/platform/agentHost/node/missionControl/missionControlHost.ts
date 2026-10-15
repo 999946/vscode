@@ -67,9 +67,9 @@ export type MissionControlOperationClassification = {
 };
 
 export function getMissionControlEnvironmentName(product: IProductService, machineName = hostname()): string {
-	const applicationName = product.quality === 'stable' ? 'VS Code'
-		: product.quality === 'insider' ? 'VS Code Insiders'
-			: product.nameShort === 'Code - OSS' || product.nameShort === 'Code - OSS Dev' ? 'VS Code OSS' : product.nameShort;
+	const applicationName = product.quality === 'stable' ? 'ParaCode'
+		: product.quality === 'insider' ? 'ParaCode Insiders'
+			: product.nameShort === 'ParaCode' || product.nameShort === 'ParaCode Dev' ? 'ParaCode' : product.nameShort;
 	return `${machineName.replace(/\.local$/i, '')} (${applicationName})`;
 }
 

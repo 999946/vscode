@@ -1066,7 +1066,7 @@ suite('Mission Control WPS', () => {
 			};
 			const service = store.add(new MissionControlEnvironment({
 				userDataPath: path,
-				name: 'VS Code OSS',
+				name: 'ParaCode',
 				fetch: fakeFetch,
 				attach: () => ({ dispose() { } }),
 				onError: () => { },
@@ -1095,7 +1095,7 @@ suite('Mission Control WPS', () => {
 		const requestId = 'ABCD:1234:5678:90AB:CDEF';
 		const service = store.add(new MissionControlEnvironment({
 			userDataPath: path,
-			name: 'VS Code OSS',
+			name: 'ParaCode',
 			fetch: async () => Response.json({ message: 'Registration unavailable; token=private-token' }, { status: 503, headers: { 'x-github-request-id': requestId } }),
 			attach: () => ({ dispose() { } }),
 			onError: error => { throw error; },
@@ -1245,7 +1245,7 @@ suite('Mission Control WPS', () => {
 			};
 			const service = store.add(new MissionControlEnvironment({
 				userDataPath: path,
-				name: 'VS Code OSS',
+				name: 'ParaCode',
 				fetch: fakeFetch,
 				attach: () => ({ dispose() { } }),
 				onError: error => errors.push(error instanceof Error ? error.message : String(error)),
@@ -1358,7 +1358,7 @@ suite('Mission Control WPS', () => {
 				};
 				service = store.add(new MissionControlEnvironment({
 					userDataPath: path,
-					name: 'Test Machine (VS Code OSS)',
+					name: 'Test Machine (ParaCode)',
 					fetch: async (input, init) => {
 						const url = new URL(input.toString());
 						requests.push({ path: url.pathname, credential: new Headers(init?.headers).get('Authorization'), body: init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined });
@@ -1577,7 +1577,7 @@ suite('Mission Control WPS', () => {
 
 		test('refreshes the host-owned name on startup, periodic, recovery, and withdrawal heartbeats', async () => {
 			await withEnvironment([], async ({ service, clock, requests, sockets, options }) => {
-				const hostName = 'Test Machine (VS Code OSS)';
+				const hostName = 'Test Machine (ParaCode)';
 				const snapshot = () => {
 					let storedName: string | undefined;
 					let registrations = 0;
@@ -1973,7 +1973,7 @@ suite('Mission Control WPS', () => {
 		const { key } = signingFixture();
 		return store.add(new MissionControlEnvironment({
 			userDataPath: userData,
-			name: 'VS Code OSS',
+			name: 'ParaCode',
 			fetch: async (input, init) => {
 				const url = new URL(input.toString());
 				if (url.pathname.endsWith('/register')) {
@@ -2021,7 +2021,7 @@ suite('Mission Control WPS', () => {
 				names,
 			}, {
 				registrationsForTwoWindows: 1, restartIdentityMatches: true, isolatedIdentityDiffers: true, registrations: 3,
-				names: ['VS Code OSS', 'VS Code OSS', 'VS Code OSS'],
+				names: ['ParaCode', 'ParaCode', 'ParaCode'],
 			});
 		} finally {
 			await rm(path, { recursive: true });
@@ -2200,7 +2200,7 @@ suite('Mission Control WPS', () => {
 				const requests: string[] = [];
 				const service = store.add(new MissionControlEnvironment({
 					userDataPath: path,
-					name: 'VS Code OSS',
+					name: 'ParaCode',
 					fetch: async input => {
 						requests.push(input.toString());
 						return Response.json({ id: 123, type: 'User' });
@@ -2252,7 +2252,7 @@ suite('Mission Control WPS', () => {
 			const registrations: object[] = [];
 			const service = store.add(new MissionControlEnvironment({
 				userDataPath: path,
-				name: 'VS Code OSS',
+				name: 'ParaCode',
 				fetch: async (input, init) => {
 					const url = new URL(input.toString());
 					if (url.pathname.endsWith('/register')) {
@@ -2298,7 +2298,7 @@ suite('Mission Control WPS', () => {
 			let attachedRoots: readonly string[] | undefined;
 			const service = store.add(new MissionControlEnvironment({
 				userDataPath: path,
-				name: 'VS Code OSS',
+				name: 'ParaCode',
 				fetch: async input => {
 					const url = new URL(input.toString());
 					requestPaths.push(url.pathname);

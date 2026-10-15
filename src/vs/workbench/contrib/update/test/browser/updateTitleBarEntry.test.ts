@@ -176,7 +176,7 @@ suite('UpdateTooltip', () => {
 			configurationService,
 			new TestHoverService(),
 			new class extends mock<IProductService>() {
-				override readonly nameLong = 'Code - OSS Dev';
+				override readonly nameLong = 'ParaCode Dev';
 				override readonly version = '1.134.0';
 				override readonly commit = 'current';
 			},

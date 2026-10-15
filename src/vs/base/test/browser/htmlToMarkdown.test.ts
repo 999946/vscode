@@ -46,7 +46,7 @@ suite('htmlToMarkdown', () => {
 				[
 					convertHtmlToMarkdown('<a href="vscode-file://vscode-app/c:/Users/user/AppData/Local/Programs/Microsoft%20VS%20Code/resources/app/out/vs/code/electron-browser/workbench/workbench.html">foo-bar.md</a>'),
 					convertHtmlToMarkdown('<a href="file:///home/user/project/DefaultMeshInterpolator.java#46,62">mx:text</a>'),
-					convertHtmlToMarkdown('<a href="code-oss://file/c:/repo/src/config.ts">src/config.ts</a>'),
+					convertHtmlToMarkdown('<a href="paracode://file/c:/repo/src/config.ts">src/config.ts</a>'),
 					convertHtmlToMarkdown('<a href="http://_vscodecontentref_/0">index.ts</a>'),
 					// The agent host prompt asks models for bare absolute paths.
 					convertHtmlToMarkdown('<a href="/Users/me/repo/src/a.ts">a.ts</a>'),

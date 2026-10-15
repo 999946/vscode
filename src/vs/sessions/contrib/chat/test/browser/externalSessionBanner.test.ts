@@ -209,10 +209,10 @@ suite('Sessions - External Session Banner', () => {
 		const now = Date.UTC(2026, 7, 16, 12);
 
 		assert.deepStrictEqual(
-			getExternalSessionVisibilityConfirmation(ChatExternalSessionsMode.Last7Days, new Date(now - 7 * day - 1), now, 'Code - OSS'),
+			getExternalSessionVisibilityConfirmation(ChatExternalSessionsMode.Last7Days, new Date(now - 7 * day - 1), now, 'ParaCode'),
 			{
 				type: 'warning',
-				message: 'This session will no longer appear in Code - OSS',
+				message: 'This session will no longer appear in ParaCode',
 				detail: 'Only external sessions updated in the last 7 days will be shown. This session was last updated 8 days ago. Are you sure you want to save this change?',
 				primaryButton: '&&Save Anyway',
 			}
@@ -223,10 +223,10 @@ suite('Sessions - External Session Banner', () => {
 		const now = Date.UTC(2026, 7, 16, 12);
 
 		assert.deepStrictEqual(
-			getExternalSessionVisibilityConfirmation(ChatExternalSessionsMode.Recent, new Date(now), now, 'Code - OSS'),
+			getExternalSessionVisibilityConfirmation(ChatExternalSessionsMode.Recent, new Date(now), now, 'ParaCode'),
 			{
 				type: 'warning',
-				message: 'This session may no longer appear in Code - OSS',
+				message: 'This session may no longer appear in ParaCode',
 				detail: 'Only up to the 2 most recently updated external sessions from the last 7 days will be shown. Are you sure you want to save this change?',
 				primaryButton: '&&Save Anyway',
 			}

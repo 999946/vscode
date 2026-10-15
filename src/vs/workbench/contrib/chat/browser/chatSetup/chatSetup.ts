@@ -132,7 +132,7 @@ export function refreshTokens(commandService: ICommandService): void {
  * which triggers the native protocol handler back into the desktop app.
  *
  * @param baseUpgradeUrl The direct GitHub upgrade URL (from `resolveGitHubUrl`).
- * @param urlProtocol The VS Code URL protocol scheme (e.g. `vscode`, `vscode-insiders`, `code-oss`).
+ * @param urlProtocol The VS Code URL protocol scheme (e.g. `vscode`, `vscode-insiders`, `paracode`).
  * @param quality The product quality (`stable`, `insider`, or `undefined` for OSS).
  * @returns The upgrade URL with a `return_to` query parameter appended.
  */

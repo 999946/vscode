@@ -23,7 +23,7 @@ suite('Bootstrap package metadata', () => {
 		test(`${target} uses the bundler's bootstrap files for metadata injection`, async () => {
 			const filenames = ['main.js', 'cli.js', 'server-main.js', 'server-cli.js', 'bootstrap-fork.js', 'other.js'];
 			const original = 'export const config={BUILD_INSERT_PACKAGE_CONFIGURATION:"BUILD_INSERT_PACKAGE_CONFIGURATION"};';
-			const packageJson = JSON.stringify({ name: 'Code - OSS', version: '1.0.0' });
+			const packageJson = JSON.stringify({ name: 'ParaCode', version: '1.0.0' });
 			const stream = inlineMeta(es.readArray(filenames.map(filename => new File({
 				path: path.join(import.meta.dirname, filename),
 				contents: Buffer.from(original)

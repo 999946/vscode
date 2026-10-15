@@ -35,7 +35,7 @@ suite('Sessions policy update explanation', () => {
 	const product = new class extends mock<IProductService>() {
 		override readonly nameShort = 'Code';
 		override readonly version = '1.140.0';
-		override readonly urlProtocol = 'code-oss';
+		override readonly urlProtocol = 'paracode';
 	}();
 	const info = getManagedSettingsUpdateInfo({ errorCode: 'client_update_required', minimumClientVersion: '1.141.0' }, product, State.Idle(UpdateType.Archive));
 
@@ -111,7 +111,7 @@ suite('Sessions policy update explanation', () => {
 		contribution.dispose();
 		assert.deepStrictEqual({ initial, opened, newTop, inert: content.inert, overlays: root.querySelectorAll('.sessions-policy-blocked-overlay').length }, {
 			initial: { title: info.title, message: info.message, details: [info.message, info.detail], button: 'Check for Updates', recoveryButtons: ['Check for Updates', 'Open Editor Window'], focused: true, top: '30px', inert: true },
-			opened: ['command:update.checkForUpdate', URI.from({ scheme: 'code-oss', query: 'windowId=_blank' }).toString()],
+			opened: ['command:update.checkForUpdate', URI.from({ scheme: 'paracode', query: 'windowId=_blank' }).toString()],
 			newTop: '48px',
 			inert: false,
 			overlays: 0,

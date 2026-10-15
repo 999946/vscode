@@ -22,7 +22,7 @@ function createOverlay(ctx: ComponentFixtureContext, options: ISessionsBlockedOv
 		colorTheme: ctx.theme,
 		additionalServices: (reg) => {
 			reg.defineInstance(IProductService, new class extends mock<IProductService>() {
-				override readonly nameShort = 'Code - OSS';
+				override readonly nameShort = 'ParaCode';
 				override readonly quality = 'insider';
 				override readonly urlProtocol = 'vscode-insiders';
 			}());

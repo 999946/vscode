@@ -143,7 +143,7 @@ async function main(buildDir?: string, outDir?: string): Promise<void> {
 	const arch = process.env['VSCODE_ARCH'];
 	const quality = process.env['VSCODE_QUALITY'];
 	// OSS builds have no quality; fall back to the stable background art while
-	// keeping the volume title at 'Code OSS' (see the switch below).
+	// keeping the volume title at 'ParaCode' (see the switch below).
 	const backgroundQuality = quality ?? 'stable';
 
 	if (!buildDir) {
@@ -158,23 +158,23 @@ async function main(buildDir?: string, outDir?: string): Promise<void> {
 		throw new Error('Output directory argument is required');
 	}
 
-	const appRoot = path.join(buildDir, `VSCode-darwin-${arch}`);
+	const appRoot = path.join(buildDir, `ParaCode-darwin-${arch}`);
 	const appName = product.nameLong + '.app';
 	const appPath = path.join(appRoot, appName);
-	const dmgName = `VSCode-darwin-${arch}`;
+	const dmgName = `ParaCode-darwin-${arch}`;
 	const artifactPath = path.join(outDir, `${dmgName}.dmg`);
 	const backgroundPath = path.join(import.meta.dirname, `dmg-background-${backgroundQuality}.tiff`);
 	const diskIconPath = path.join(root, 'resources', 'darwin', 'code.icns');
-	let title = 'Code OSS';
+	let title = 'ParaCode';
 	switch (quality) {
 		case 'stable':
-			title = 'VS Code';
+			title = 'ParaCode';
 			break;
 		case 'insider':
-			title = 'VS Code Insiders';
+			title = 'ParaCode Insiders';
 			break;
 		case 'exploration':
-			title = 'VS Code Exploration';
+			title = 'ParaCode Exploration';
 			break;
 	}
 

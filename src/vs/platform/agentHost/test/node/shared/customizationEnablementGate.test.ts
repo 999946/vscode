@@ -231,15 +231,15 @@ suite('CustomizationEnablementGate', () => {
 
 	test('publishes a workspace decision for a materialized plugin MCP child in every session', () => {
 		const service = new TestEnablementService();
-		const pluginUri = 'file:///Users/connor/.vscode-oss-dev-dev/agent-plugins/github.com/microsoft/azure-skills/.github/plugins/azure-skills';
-		const materializedChildId = 'file:///Users/connor/.vscode-oss-dev-dev/agentPlugins/19ff2ac36f2/.mcp.json#mcp=azure';
+		const pluginUri = 'file:///Users/connor/.para-dev-dev/agent-plugins/github.com/microsoft/azure-skills/.github/plugins/azure-skills';
+		const materializedChildId = 'file:///Users/connor/.para-dev-dev/agentPlugins/19ff2ac36f2/.mcp.json#mcp=azure';
 		const workspaceEnablement = [{ kind: CustomizationEnablementKind.Workspace, uri: 'file:///Users/connor/Github/js-debug-demos/node', enabled: false }] as const;
 		service.setEnablementForDurableKey(`${pluginUri}#mcp=azure`, workspaceEnablement);
 		const parsedPlugin: PluginCustomization = {
 			...plugin([{
 				...server(),
 				id: materializedChildId,
-				uri: 'file:///Users/connor/.vscode-oss-dev-dev/agentPlugins/19ff2ac36f2/.mcp.json',
+				uri: 'file:///Users/connor/.para-dev-dev/agentPlugins/19ff2ac36f2/.mcp.json',
 				name: 'azure',
 			}]),
 			uri: pluginUri,

@@ -198,7 +198,7 @@ suite('SSHRemoteAgentHostMainService - host key verification', () => {
 		const productService: Pick<IProductService, '_serviceBrand' | 'quality' | 'dataFolderName'> = {
 			_serviceBrand: undefined,
 			quality: 'stable',
-			dataFolderName: '.vscode-oss',
+			dataFolderName: '.paracode',
 		};
 		return disposables.add(new HostKeyTestService(new NullLogService(), productService as IProductService, NullTelemetryService));
 	}
