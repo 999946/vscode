@@ -7,6 +7,7 @@ import { Emitter, Event } from '../../../base/common/event.js';
 import { IDisposable, toDisposable, DisposableStore, DisposableMap } from '../../../base/common/lifecycle.js';
 import { URI, UriComponents } from '../../../base/common/uri.js';
 import { IFileWriteOptions, FileSystemProviderCapabilities, IFileChange, IFileService, IStat, IWatchOptions, FileType, IFileOverwriteOptions, IFileDeleteOptions, IFileOpenOptions, FileOperationError, FileOperationResult, FileSystemProviderErrorCode, IFileSystemProviderWithOpenReadWriteCloseCapability, IFileSystemProviderWithFileReadWriteCapability, IFileSystemProviderWithFileFolderCopyCapability, FilePermission, toFileSystemProviderErrorCode, IFileStatWithPartialMetadata, IFileStat } from '../../../platform/files/common/files.js';
+import { ILogService } from '../../../platform/log/common/log.js';
 import { extHostNamedCustomer, IExtHostContext } from '../../services/extensions/common/extHostCustomers.js';
 import { ExtHostContext, ExtHostFileSystemShape, IFileChangeDto, MainContext, MainThreadFileSystemShape } from '../common/extHost.protocol.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
@@ -21,7 +22,8 @@ export class MainThreadFileSystem implements MainThreadFileSystemShape {
 
 	constructor(
 		extHostContext: IExtHostContext,
-		@IFileService private readonly _fileService: IFileService
+		@IFileService private readonly _fileService: IFileService,
+		@ILogService private readonly _logService: ILogService
 	) {
 		this._proxy = extHostContext.getProxy(ExtHostContext.ExtHostFileSystem);
 
@@ -40,6 +42,18 @@ export class MainThreadFileSystem implements MainThreadFileSystemShape {
 	}
 
 	async $registerFileSystemProvider(handle: number, scheme: string, capabilities: FileSystemProviderCapabilities, readonlyMessage?: IMarkdownString): Promise<void> {
+
+		// A workspace session creates its own extension host, so the same
+		// extension can activate in the main window host and in session hosts.
+		// Each host registers its extension contributed providers against the
+		// shared window-level FileService; skip the registration when the
+		// scheme is already provided by another host instead of throwing
+		// "A filesystem provider for the scheme '...' is already registered.".
+		if (this._fileService.hasProvider(URI.from({ scheme, path: '/' }))) {
+			this._logService.debug(`[MainThreadFileSystem] A filesystem provider for the scheme '${scheme}' is already registered by another extension host; skipping duplicate registration.`);
+			return;
+		}
+
 		this._fileProvider.set(handle, new RemoteFileSystemProvider(this._fileService, scheme, capabilities, readonlyMessage, handle, this._proxy));
 	}
 

@@ -8,6 +8,7 @@ import { Disposable, DisposableMap } from '../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../base/common/map.js';
 import { waitForState } from '../../../base/common/observable.js';
 import { URI } from '../../../base/common/uri.js';
+import { ILogService } from '../../../platform/log/common/log.js';
 import { GitRepository } from '../../contrib/git/browser/gitService.js';
 import { IGitExtensionDelegate, IGitService, GitRef, GitRefQuery, GitRefType, GitRepositoryState, GitBranch, GitChange, GitDiffChange, IGitRepository } from '../../contrib/git/common/gitService.js';
 import { extHostNamedCustomer, IExtHostContext } from '../../services/extensions/common/extHostCustomers.js';
@@ -75,13 +76,22 @@ export class MainThreadGitExtensionService extends Disposable implements MainThr
 	private _repositoryHandles = new ResourceMap<number>();
 	private readonly _repositories = this._register(new DisposableMap<number, GitRepository>());
 
+	// The window-level GitService delegate can only be claimed once. In this
+	// fork every workspace session runs its own extension host, so the
+	// vscode.git extension is available in more than one host; the first host
+	// to reach _initializeDelegate (typically the main window) claims the
+	// delegate and later hosts skip the registration. Check and claim happen
+	// in the same synchronous block, so there is no race between hosts.
+	private static delegateClaimed = false;
+
 	get repositories(): Iterable<IGitRepository> {
 		return this._repositories.values();
 	}
 
 	constructor(
 		extHostContext: IExtHostContext,
-		@IGitService private readonly gitService: IGitService
+		@IGitService private readonly gitService: IGitService,
+		@ILogService private readonly _logService: ILogService
 	) {
 		super();
 
@@ -96,7 +106,17 @@ export class MainThreadGitExtensionService extends Disposable implements MainThr
 		const isExtensionAvailable = await this._proxy.$isGitExtensionAvailable();
 
 		if (isExtensionAvailable && !this._store.isDisposed) {
+			// A workspace session creates its own extension host, so the vscode.git
+			// extension can be available in the main window host and in session
+			// hosts. Skip the registration when another host already claimed the
+			// delegate instead of throwing "GitExtension delegate is already set.".
+			if (MainThreadGitExtensionService.delegateClaimed) {
+				this._logService.debug('[MainThreadGitExtensionService] The GitExtension delegate is already set by another extension host; skipping duplicate delegate.');
+				return;
+			}
+
 			this._register(this.gitService.setDelegate(this));
+			MainThreadGitExtensionService.delegateClaimed = true;
 		}
 	}
 

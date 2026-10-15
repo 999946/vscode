@@ -11,6 +11,7 @@ import { URI, UriComponents } from '../../../base/common/uri.js';
 import { localize } from '../../../nls.js';
 import { IEnvironmentService } from '../../../platform/environment/common/environment.js';
 import { IFileService } from '../../../platform/files/common/files.js';
+import { ILogService } from '../../../platform/log/common/log.js';
 import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
 import { ILabelService } from '../../../platform/label/common/label.js';
 import { INotificationService } from '../../../platform/notification/common/notification.js';
@@ -55,6 +56,7 @@ export class MainThreadWorkspace extends Disposable implements MainThreadWorkspa
 		@IWorkspaceTrustManagementService private readonly _workspaceTrustManagementService: IWorkspaceTrustManagementService,
 		@IWorkspaceTrustRequestService private readonly _workspaceTrustRequestService: IWorkspaceTrustRequestService,
 		@ITextFileService private readonly _textFileService: ITextFileService,
+		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
 		this._queryBuilder = this._instantiationService.createInstance(QueryBuilder);
@@ -273,17 +275,33 @@ export class MainThreadWorkspace extends Disposable implements MainThreadWorkspa
 	private registeredEditSessionProviders = this._register(new DisposableMap<number, IDisposable>());
 
 	$registerEditSessionIdentityProvider(handle: number, scheme: string) {
-		const disposable = this._editSessionIdentityService.registerEditSessionIdentityProvider({
-			scheme: scheme,
-			getEditSessionIdentifier: async (workspaceFolder: WorkspaceFolder, token: CancellationToken) => {
-				return this._proxy.$getEditSessionIdentifier(workspaceFolder.uri, token);
-			},
-			provideEditSessionIdentityMatch: async (workspaceFolder: WorkspaceFolder, identity1: string, identity2: string, token: CancellationToken) => {
-				return this._proxy.$provideEditSessionIdentityMatch(workspaceFolder.uri, identity1, identity2, token);
-			}
-		});
+		try {
+			const disposable = this._editSessionIdentityService.registerEditSessionIdentityProvider({
+				scheme: scheme,
+				getEditSessionIdentifier: async (workspaceFolder: WorkspaceFolder, token: CancellationToken) => {
+					return this._proxy.$getEditSessionIdentifier(workspaceFolder.uri, token);
+				},
+				provideEditSessionIdentityMatch: async (workspaceFolder: WorkspaceFolder, identity1: string, identity2: string, token: CancellationToken) => {
+					return this._proxy.$provideEditSessionIdentityMatch(workspaceFolder.uri, identity1, identity2, token);
+				}
+			});
 
-		this.registeredEditSessionProviders.set(handle, disposable);
+			this.registeredEditSessionProviders.set(handle, disposable);
+		} catch (error) {
+
+			// A workspace session creates its own extension host, so the same
+			// extension can activate in the main window host and in session hosts.
+			// Each host registers an edit session identity provider for the same
+			// scheme against the shared window-level service; treat the second
+			// registration as a benign no-op instead of throwing
+			// "A provider has already been registered for scheme '...'.".
+			if (error instanceof Error && error.message.includes('already been registered')) {
+				this._logService.debug(`[MainThreadWorkspace] A provider has already been registered for scheme '${scheme}' by another extension host; skipping duplicate registration.`);
+				return;
+			}
+
+			throw error;
+		}
 	}
 
 	$unregisterEditSessionIdentityProvider(handle: number) {
