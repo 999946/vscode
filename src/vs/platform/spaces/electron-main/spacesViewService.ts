@@ -1,0 +1,327 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import electron from 'electron';
+import { Emitter } from '../../../base/common/event.js';
+import { Disposable, DisposableMap, DisposableStore } from '../../../base/common/lifecycle.js';
+import { AddFirstParameterToFunctions } from '../../../base/common/types.js';
+import { URI, UriComponents } from '../../../base/common/uri.js';
+import { createDecorator, IInstantiationService } from '../../instantiation/common/instantiation.js';
+import { ILifecycleMainService } from '../../lifecycle/electron-main/lifecycleMainService.js';
+import { ILogService } from '../../log/common/log.js';
+import { IWorkbenchHost } from '../../window/electron-main/workbenchHost.js';
+import { IWindowsMainService, defaultBrowserWindowOptions } from '../../windows/electron-main/windows.js';
+import { WindowMode, defaultWindowState } from '../../window/electron-main/window.js';
+import { ISingleFolderWorkspaceIdentifier, isSingleFolderWorkspaceIdentifier, isWorkspaceIdentifier, IWorkspaceIdentifier } from '../../workspace/common/workspace.js';
+import { ICommonSpacesService, ISpaceOperationResult, ISpacesSnapshot, ISpaceWorkspace, SpaceOperationResult } from '../common/spaces.js';
+import { SpacesModel } from '../common/spacesModel.js';
+
+export const ISpacesViewService = createDecorator<ISpacesViewService>('spacesViewService');
+
+export interface ISpacesViewService extends AddFirstParameterToFunctions<ICommonSpacesService, Promise<unknown> /* only methods, not events */, number | undefined /* window ID */> { }
+
+/**
+ * Creates the single shared frame window that hosts all Space views.
+ * Injectable so tests can substitute a fake `BrowserWindow`.
+ */
+export const ISpacesFrameProvider = createDecorator<ISpacesFrameProvider>('spacesFrameProvider');
+
+export interface ISpacesFrameProvider {
+	createFrame(): electron.BrowserWindow | undefined;
+}
+
+export class DefaultSpacesFrameProvider implements ISpacesFrameProvider {
+
+	constructor(
+		@IInstantiationService private readonly instantiationService: IInstantiationService
+	) { }
+
+	createFrame(): electron.BrowserWindow | undefined {
+		const state = defaultWindowState(WindowMode.Normal, true);
+		const options = this.instantiationService.invokeFunction(defaultBrowserWindowOptions, state);
+
+		return new electron.BrowserWindow({
+			...options,
+			title: 'ParaCode',
+			webPreferences: {
+				...options.webPreferences,
+				backgroundThrottling: false
+			}
+		});
+	}
+}
+
+/**
+ * Presents Spaces as workbenches hosted inside `WebContentsView`s attached to a
+ * single frame `BrowserWindow`. This is the end-state WebContentsView child
+ * architecture described in the Spaces design:
+ *
+ * - one shared on-screen frame (`SpacesViewService.frame`)
+ * - one `WebContentsViewWorkbenchHost` per Space, each with its own renderer,
+ *   IPC context (`windowId`), extension-host pairing and lifecycle
+ * - switching Spaces swaps which view is attached/visible in the frame, it
+ *   never unloads or reloads a renderer
+ *
+ * `SpacesMainService` is the multi-window MVP presentation (show/hide
+ * `BrowserWindow`s); this service is the view-based presentation. Both share
+ * the same model (`SpacesModel`), service interface (`ICommonSpacesService`)
+ * and UI; only the presentation differs.
+ */
+export class SpacesViewService extends Disposable implements ISpacesViewService {
+
+	declare readonly _serviceBrand: undefined;
+
+	private readonly model = this._register(new SpacesModel());
+
+	private readonly _onDidChangeSpaces = this._register(new Emitter<ISpacesSnapshot>());
+	readonly onDidChangeSpaces = this._onDidChangeSpaces.event;
+
+	/** The single frame window hosting all Space views. */
+	private _frame: electron.BrowserWindow | undefined = undefined;
+	get frame(): electron.BrowserWindow | undefined { return this._frame; }
+
+	/** host per Space, mapped by Space id. */
+	private readonly hosts = new Map<string, IWorkbenchHost>();
+
+	private readonly hostListeners = this._register(new DisposableMap<string, DisposableStore>());
+
+	constructor(
+		@IWindowsMainService private readonly windowsMainService: IWindowsMainService,
+		@ILifecycleMainService private readonly lifecycleMainService: ILifecycleMainService,
+		@ISpacesFrameProvider private readonly frameProvider: ISpacesFrameProvider,
+		@ILogService private readonly logService: ILogService
+	) {
+		super();
+
+		this._register(this.model.onDidChange(() => this._onDidChangeSpaces.fire(this.model.snapshot())));
+	}
+
+	async getSpaces(windowId: number | undefined): Promise<ISpacesSnapshot> {
+		return this.model.snapshot();
+	}
+
+	async addCurrentWindowAsSpace(windowId: number | undefined): Promise<ISpaceOperationResult> {
+		const currentWindow = typeof windowId === 'number' ? this.windowsMainService.getWindowById(windowId) : undefined;
+		if (!currentWindow?.config) {
+			return { result: SpaceOperationResult.UnsupportedWindow };
+		}
+
+		const workspace = currentWindow.openedWorkspace;
+
+		// The calling window is a regular `CodeWindow`; in the view-based
+		// presentation we recreate it as a `WebContentsViewWorkbenchHost` inside
+		// the frame (a `WebContentsView` cannot adopt a `BrowserWindow`'s
+		// renderer). The original window is closed to leave exactly one frame.
+		const creation = await this.createHostAsSpace(workspace);
+		if (creation.result !== SpaceOperationResult.Ok) {
+			return creation;
+		}
+
+		currentWindow.close();
+
+		return creation;
+	}
+
+	async createEmptySpace(windowId: number | undefined): Promise<ISpaceOperationResult> {
+		return this.createHostAsSpace(undefined);
+	}
+
+	async openFolderAsSpace(windowId: number | undefined, folderUri: UriComponents): Promise<ISpaceOperationResult> {
+		const uri = URI.revive(folderUri);
+		return this.createHostAsSpace({ id: uri.fsPath, uri });
+	}
+
+	async openWorkspaceAsSpace(windowId: number | undefined, workspaceUri: UriComponents): Promise<ISpaceOperationResult> {
+		const uri = URI.revive(workspaceUri);
+		return this.createHostAsSpace({ id: uri.fsPath, uri });
+	}
+
+	async switchToSpace(windowId: number | undefined, spaceId: string): Promise<ISpaceOperationResult> {
+		return this.activate(spaceId);
+	}
+
+	async closeSpace(windowId: number | undefined, spaceId: string): Promise<ISpaceOperationResult> {
+		const host = this.hosts.get(spaceId);
+		if (!host) {
+			return { result: SpaceOperationResult.UnknownSpace };
+		}
+
+		this.activate(spaceId);
+		host.close();
+
+		return { result: SpaceOperationResult.Ok, space: this.model.getSpace(spaceId) };
+	}
+
+	async renameSpace(windowId: number | undefined, spaceId: string, name: string): Promise<ISpaceOperationResult> {
+		if (!this.model.rename(spaceId, name)) {
+			return { result: SpaceOperationResult.UnknownSpace };
+		}
+
+		return { result: SpaceOperationResult.Ok, space: this.model.getSpace(spaceId) };
+	}
+
+	async revealCurrentSpace(windowId: number | undefined): Promise<void> {
+		const space = typeof windowId === 'number' ? this.model.getSpaceByWindowId(windowId) : undefined;
+		if (space && space.state !== 'active') {
+			this.activate(space.id);
+		}
+	}
+
+	async requestAttention(windowId: number | undefined): Promise<void> {
+		const space = typeof windowId === 'number' ? this.model.getSpaceByWindowId(windowId) : undefined;
+		if (space) {
+			this.markNeedsAttention(space.id);
+		}
+	}
+
+	private markNeedsAttention(spaceId: string): void {
+		if (this.model.setNeedsAttention(spaceId)) {
+			this.logService.trace(`[spaces:view] Space ${spaceId} needs attention`);
+		}
+	}
+
+	private async createHostAsSpace(workspace: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier | undefined): Promise<ISpaceOperationResult> {
+
+		// Make sure the frame exists before we load any view into it
+		const frame = this.ensureFrame();
+		if (!frame) {
+			return { result: SpaceOperationResult.OpenFailed };
+		}
+
+		// Create and load the host through the windows service so the renderer
+		// gets a complete `INativeWindowConfiguration` (same as a real window).
+		let host: IWorkbenchHost;
+		try {
+			host = await this.windowsMainService.createWorkbenchHostInFrame(frame, { workspace });
+		} catch (error) {
+			this.logService.error(`[spaces:view] Failed to create host in frame: ${error}`);
+			return { result: SpaceOperationResult.OpenFailed };
+		}
+
+		const space = this.model.add({ windowId: host.id, workspace: workspace ? toSpaceWorkspace(workspace) : undefined });
+		this.hosts.set(space.id, host);
+		this.registerHostListeners(host, space.id);
+		this.logService.info(`[spaces:view] added Space '${space.name}' (${space.id}) as view host ${host.id}`);
+
+		return this.activate(space.id);
+	}
+
+	private registerHostListeners(host: IWorkbenchHost, spaceId: string): void {
+		const disposables = new DisposableStore();
+
+		disposables.add(host.onWillFocus(() => {
+			const space = this.model.getSpace(spaceId);
+			if (space && space.state !== 'active') {
+				this.activate(space.id);
+			}
+		}));
+
+		disposables.add(host.onDidRequestAttention(() => {
+			if (this.model.getSpace(spaceId)) {
+				this.markNeedsAttention(spaceId);
+			}
+		}));
+
+		disposables.add(host.onDidClose(() => {
+			this.hostListeners.deleteAndDispose(spaceId);
+			this.hosts.delete(spaceId);
+			this.onDidCloseSpace(spaceId);
+		}));
+
+		disposables.add(host.onWillLoad(e => {
+			if (this.model.getSpace(spaceId)) {
+				this.model.updateWorkspace(spaceId, toSpaceWorkspace(e.workspace));
+			}
+		}));
+
+		this.hostListeners.set(spaceId, disposables);
+	}
+
+	private onDidCloseSpace(spaceId: string): void {
+		const space = this.model.getSpace(spaceId);
+		if (!space) {
+			return;
+		}
+
+		const removal = this.model.remove(space.id);
+		this.logService.info(`[spaces:view] Space '${space.name}' (${space.id}) closed`);
+
+		if (removal?.nextActiveSpace && !this.lifecycleMainService.quitRequested) {
+			this.activate(removal.nextActiveSpace.id);
+		}
+	}
+
+	private ensureFrame(): electron.BrowserWindow | undefined {
+		if (this._frame && !this._frame.isDestroyed()) {
+			return this._frame;
+		}
+
+		const frame = this.frameProvider.createFrame();
+		if (!frame) {
+			return undefined;
+		}
+
+		// Real `BrowserWindow`s emit `closed`; tests substitute a minimal fake
+		// that only models the surface SpacesViewService uses.
+		if (typeof (frame as { on?: (event: string, cb: () => void) => void }).on === 'function') {
+			(frame as { on: (event: string, cb: () => void) => void }).on('closed', () => {
+				this._frame = undefined;
+			});
+		}
+
+		this._frame = frame;
+		this.logService.debug('[spaces:view] created shared frame window');
+
+		return frame;
+	}
+
+	private activate(spaceId: string): ISpaceOperationResult {
+		const target = this.model.getSpace(spaceId);
+		if (!target) {
+			return { result: SpaceOperationResult.UnknownSpace };
+		}
+
+		const targetHost = this.hosts.get(spaceId);
+		if (!targetHost?.webContents || targetHost.webContents.isDestroyed()) {
+			return { result: SpaceOperationResult.UnknownSpace };
+		}
+
+		const previous = this.model.getActiveSpace();
+
+		const activation = this.model.activate(target.id);
+		if (previous === target) {
+			targetHost.show();
+			targetHost.focus();
+			return { result: SpaceOperationResult.Ok, space: target };
+		}
+
+		this.logService.trace(`[spaces:view] switching from '${activation?.previous?.name}' to '${target.name}'`);
+
+		// Show target first so the frame never ends up empty mid-switch
+		targetHost.show();
+		targetHost.focus();
+
+		// Hide all other hosts
+		for (const [id, host] of this.hosts) {
+			if (id !== spaceId && host.visible) {
+				host.hide();
+			}
+		}
+
+		return { result: SpaceOperationResult.Ok, space: this.model.getSpace(target.id) };
+	}
+}
+
+function toSpaceWorkspace(workspace: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier | undefined): ISpaceWorkspace | undefined {
+	if (isSingleFolderWorkspaceIdentifier(workspace)) {
+		return { kind: 'folder', uri: workspace.uri };
+	}
+
+	if (isWorkspaceIdentifier(workspace)) {
+		return { kind: 'workspace', uri: workspace.configPath };
+	}
+
+	return undefined;
+}

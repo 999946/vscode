@@ -48,6 +48,8 @@ suite('WindowsFinder', () => {
 			whenClosedOrLoaded: Promise<void> = Promise.resolve();
 			id: number = -1;
 			win: Electron.BrowserWindow = null!;
+			webContents: Electron.WebContents | null = null;
+			visible = false;
 			config: INativeWindowConfiguration | undefined;
 			openedWorkspace = options.openedFolderUri ? { id: '', uri: options.openedFolderUri } : options.openedWorkspace;
 			backupPath?: string | undefined;
@@ -79,6 +81,8 @@ suite('WindowsFinder', () => {
 			serializeWindowState(): IWindowState { throw new Error('Method not implemented'); }
 			updateWindowControls(options: { height?: number | undefined; backgroundColor?: string | undefined; foregroundColor?: string | undefined; dimmed?: boolean | undefined }): void { throw new Error('Method not implemented.'); }
 			notifyZoomLevel(level: number): void { throw new Error('Method not implemented.'); }
+			show(): void { throw new Error('Method not implemented.'); }
+			hide(): void { throw new Error('Method not implemented.'); }
 			matches(webContents: Electron.WebContents): boolean { throw new Error('Method not implemented.'); }
 			dispose(): void { }
 		};

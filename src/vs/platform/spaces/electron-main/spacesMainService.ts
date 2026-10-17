@@ -17,6 +17,8 @@ import { ILifecycleMainService } from '../../lifecycle/electron-main/lifecycleMa
 import { ILogService } from '../../log/common/log.js';
 import { useNativeFullScreen } from '../../window/common/window.js';
 import { ICodeWindow } from '../../window/electron-main/window.js';
+import { IWorkbenchHost } from '../../window/electron-main/workbenchHost.js';
+import { IWorkbenchHostRegistry } from '../../window/electron-main/workbenchHostRegistry.js';
 import { IWindowsMainService, OpenContext } from '../../windows/electron-main/windows.js';
 import { ISingleFolderWorkspaceIdentifier, isSingleFolderWorkspaceIdentifier, isWorkspaceIdentifier, IWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { ICommonSpacesService, ISpaceOperationResult, ISpacesSnapshot, ISpaceWorkspace, SpaceOperationResult } from '../common/spaces.js';
@@ -67,6 +69,7 @@ export class SpacesMainService extends Disposable implements ISpacesMainService 
 
 	constructor(
 		@IWindowsMainService private readonly windowsMainService: IWindowsMainService,
+		@IWorkbenchHostRegistry private readonly workbenchHostRegistry: IWorkbenchHostRegistry,
 		@IAuxiliaryWindowsMainService private readonly auxiliaryWindowsMainService: IAuxiliaryWindowsMainService,
 		@IEnvironmentMainService private readonly environmentMainService: IEnvironmentMainService,
 		@ILifecycleMainService private readonly lifecycleMainService: ILifecycleMainService,
@@ -125,8 +128,8 @@ export class SpacesMainService extends Disposable implements ISpacesMainService 
 
 	async closeSpace(windowId: number | undefined, spaceId: string): Promise<ISpaceOperationResult> {
 		const space = this.model.getSpace(spaceId);
-		const window = space ? this.windowsMainService.getWindowById(space.windowId) : undefined;
-		if (!space || !window?.win) {
+		const host = space ? this.getHostById(space.windowId) : undefined;
+		if (!space || !host) {
 			return { result: SpaceOperationResult.UnknownSpace };
 		}
 
@@ -138,7 +141,7 @@ export class SpacesMainService extends Disposable implements ISpacesMainService 
 
 		// Regular window close: goes through the lifecycle and may be vetoed.
 		// Removal and activation of the next Space happen in `onDidCloseWindow`.
-		window.win.close();
+		host.close();
 
 		return { result: SpaceOperationResult.Ok, space };
 	}
@@ -175,7 +178,7 @@ export class SpacesMainService extends Disposable implements ISpacesMainService 
 
 		// Hiding a native fullscreen window leaves an empty desktop behind on macOS
 		const activeWindow = this.getActiveSpaceWindow();
-		if (activeWindow && this.isInNativeFullScreen(activeWindow)) {
+		if (activeWindow && this.isInNativeFullScreen(activeWindow as ICodeWindow)) {
 			return { result: SpaceOperationResult.NativeFullScreen };
 		}
 
@@ -189,7 +192,7 @@ export class SpacesMainService extends Disposable implements ISpacesMainService 
 		}
 
 		const [window] = await open();
-		if (!window?.win || !this.isSupportedWindow(window)) {
+		if (!window?.webContents || !this.isSupportedWindow(window)) {
 			return { result: SpaceOperationResult.OpenFailed };
 		}
 
@@ -202,27 +205,27 @@ export class SpacesMainService extends Disposable implements ISpacesMainService 
 	 * Adds the window as Space and makes it the active one without moving it:
 	 * the window keeps its own frame and the previously active Space is hidden.
 	 */
-	private adoptAsActiveSpace(window: ICodeWindow): ISpaceOperationResult {
+	private adoptAsActiveSpace(window: IWorkbenchHost): ISpaceOperationResult {
 		const space = this.adopt(window);
 
 		return this.activate(space.id, { keepTargetFrame: true });
 	}
 
-	private adopt(window: ICodeWindow) {
+	private adopt(window: IWorkbenchHost) {
 		const existing = this.model.getSpaceByWindowId(window.id);
 		if (existing) {
 			return existing;
 		}
 
 		const space = this.model.add({ windowId: window.id, workspace: toSpaceWorkspace(window.openedWorkspace) });
-		this.logService.info(`[spaces] window ${window.id} added as Space '${space.name}' (${space.id})`);
+		this.logService.info(`[spaces] host ${window.id} added as Space '${space.name}' (${space.id})`);
 
 		this.registerWindowListeners(window, space.id);
 
 		return space;
 	}
 
-	private registerWindowListeners(window: ICodeWindow, spaceId: string): void {
+	private registerWindowListeners(window: IWorkbenchHost, spaceId: string): void {
 		const disposables = new DisposableStore();
 
 		// A hidden Space that gets focused by any other route (window switcher,
@@ -236,7 +239,11 @@ export class SpacesMainService extends Disposable implements ISpacesMainService 
 		// input or a finished task) of a hidden Space are surfaced in the Spaces UI
 		disposables.add(window.onDidRequestAttention(() => this.markNeedsAttention(spaceId)));
 
-		const win = window.win;
+		// Window-backed hosts (a `CodeWindow`) additionally listen to the native
+		// `focus`/`close` events and remember their frame geometry, which a
+		// `WebContentsView`-backed host does not have (it shares one frame).
+		const codeWindow = window as ICodeWindow;
+		const win = codeWindow.win;
 		if (win) {
 			disposables.add(Event.fromNodeEventEmitter(win, 'focus')(() => this.onDidRevealWindow(window)));
 
@@ -259,48 +266,54 @@ export class SpacesMainService extends Disposable implements ISpacesMainService 
 
 	private activate(spaceId: string, options?: { keepTargetFrame?: boolean }): ISpaceOperationResult {
 		const target = this.model.getSpace(spaceId);
-		const targetWindow = target ? this.windowsMainService.getWindowById(target.windowId) : undefined;
-		const targetWin = targetWindow?.win;
-		if (!target || !targetWindow || !targetWin || targetWin.isDestroyed()) {
+		const targetHost = target ? this.getHostById(target.windowId) : undefined;
+		if (!target || !targetHost || !targetHost.webContents || targetHost.webContents.isDestroyed()) {
 			return { result: SpaceOperationResult.UnknownSpace };
 		}
 
 		const previousWindow = this.getActiveSpaceWindow();
-		if (previousWindow === targetWindow) {
-			if (!targetWin.isVisible()) {
-				targetWin.show();
-				this.showAuxiliaryWindows(targetWindow.id);
+		if (previousWindow?.id === targetHost.id) {
+			if (!targetHost.visible) {
+				targetHost.show();
+				this.showAuxiliaryWindows(targetHost.id);
 			}
-			targetWindow.focus();
+			targetHost.focus();
 
 			return { result: SpaceOperationResult.Ok, space: target };
 		}
 
-		if (previousWindow && this.isInNativeFullScreen(previousWindow)) {
+		if (previousWindow && this.isInNativeFullScreen(previousWindow as ICodeWindow)) {
 			return { result: SpaceOperationResult.NativeFullScreen };
 		}
 
-		const previousWin = previousWindow?.win && !previousWindow.win.isDestroyed() ? previousWindow.win : undefined;
+		const previousCodeWindow = previousWindow ? previousWindow as ICodeWindow : undefined;
+		const previousWin = previousCodeWindow?.win && !previousCodeWindow.win.isDestroyed() ? previousCodeWindow.win : undefined;
 
 		// Update the model first: the `show` and `focus` events fired below
 		// must see the target as already active
 		const activation = this.model.activate(target.id);
 		this.logService.trace(`[spaces] switching from '${activation?.previous?.name}' to '${target.name}'`);
 
+		// Frame geometry is a property of the window-backed presentation. A
+		// `WebContentsView`-backed host shares one frame, so there is no frame
+		// to capture or move - only the active view swaps.
 		if (!options?.keepTargetFrame) {
 			const frame = previousWin ? captureFrame(previousWin) : this.lastFrame;
 			if (frame) {
-				applyFrame(targetWin, frame);
+				const targetWin = (targetHost as ICodeWindow).win;
+				if (targetWin) {
+					applyFrame(targetWin, frame);
+				}
 			}
 		}
 
 		// Show the target before hiding the previous Space so that the
 		// application never ends up without a visible window mid-switch
-		if (!targetWin.isVisible()) {
-			targetWin.show();
+		if (!targetHost.visible) {
+			targetHost.show();
 		}
-		this.showAuxiliaryWindows(targetWindow.id);
-		targetWindow.focus();
+		this.showAuxiliaryWindows(targetHost.id);
+		targetHost.focus();
 
 		if (previousWindow && previousWin?.isVisible()) {
 			this.lastFrame = captureFrame(previousWin);
@@ -343,7 +356,7 @@ export class SpacesMainService extends Disposable implements ISpacesMainService 
 		}
 	}
 
-	private onDidRevealWindow(window: ICodeWindow): void {
+	private onDidRevealWindow(window: IWorkbenchHost): void {
 		const space = this.model.getSpaceByWindowId(window.id);
 		if (space && space.state !== 'active') {
 			this.activate(space.id);
@@ -404,23 +417,31 @@ export class SpacesMainService extends Disposable implements ISpacesMainService 
 		}
 	}
 
-	private getActiveSpaceWindow(): ICodeWindow | undefined {
+	private getActiveSpaceWindow(): IWorkbenchHost | undefined {
 		const active = this.model.getActiveSpace();
 
-		return active ? this.windowsMainService.getWindowById(active.windowId) : undefined;
+		return active ? this.getHostById(active.windowId) : undefined;
 	}
 
-	private getSupportedWindow(windowId: number | undefined): ICodeWindow | undefined {
-		const window = typeof windowId === 'number' ? this.windowsMainService.getWindowById(windowId) : undefined;
+	private getSupportedWindow(windowId: number | undefined): IWorkbenchHost | undefined {
+		const window = typeof windowId === 'number' ? this.getHostById(windowId) : undefined;
 
 		return window && this.isSupportedWindow(window) ? window : undefined;
 	}
 
-	private isSupportedWindow(window: ICodeWindow): boolean {
-		return !!window.win
-			&& !window.config?.isSessionsWindow
-			&& !window.isExtensionDevelopmentHost
-			&& !window.isExtensionTestHost;
+	private getHostById(id: number): IWorkbenchHost | undefined {
+		return this.workbenchHostRegistry.getHostById(id) ?? this.windowsMainService.getWindowById(id);
+	}
+
+	private isSupportedWindow(window: IWorkbenchHost): boolean {
+		// Extension development/extension test hosts must never become Spaces
+		const codeWindow = window as ICodeWindow;
+		if (codeWindow.isExtensionDevelopmentHost || codeWindow.isExtensionTestHost) {
+			return false;
+		}
+
+		return !!window.webContents
+			&& !window.config?.isSessionsWindow;
 	}
 
 	private isInNativeFullScreen(window: ICodeWindow): boolean {

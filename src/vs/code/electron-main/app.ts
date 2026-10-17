@@ -104,6 +104,10 @@ import { AgentsWindowOpenSource, isFolderToOpen, isWorkspaceToOpen, IWindowOpena
 import { getAllWindowsExcludingOffscreen, IWindowsMainService, OpenContext } from '../../platform/windows/electron-main/windows.js';
 import { ICodeWindow } from '../../platform/window/electron-main/window.js';
 import { WindowsMainService } from '../../platform/windows/electron-main/windowsMainService.js';
+import { IWorkbenchHostRegistry, WorkbenchHostRegistry } from '../../platform/window/electron-main/workbenchHostRegistry.js';
+import { DefaultSpacesFrameProvider, ISpacesFrameProvider, ISpacesViewService, SpacesViewService } from '../../platform/spaces/electron-main/spacesViewService.js';
+import { ISpacesMainService, SpacesMainService } from '../../platform/spaces/electron-main/spacesMainService.js';
+import { SPACES_CHANNEL_NAME } from '../../platform/spaces/common/spaces.js';
 import { ActiveWindowManager } from '../../platform/windows/node/windowTracker.js';
 import { hasWorkspaceFileExtension } from '../../platform/workspace/common/workspace.js';
 import { IWorkspacesService } from '../../platform/workspaces/common/workspaces.js';
@@ -1240,6 +1244,10 @@ export class CodeApplication extends Disposable {
 		}
 
 		// Windows
+		services.set(IWorkbenchHostRegistry, new SyncDescriptor(WorkbenchHostRegistry, undefined, false));
+		services.set(ISpacesFrameProvider, new SyncDescriptor(DefaultSpacesFrameProvider, undefined, false));
+		services.set(ISpacesMainService, new SyncDescriptor(SpacesMainService, undefined, false));
+		services.set(ISpacesViewService, new SyncDescriptor(SpacesViewService, undefined, false));
 		services.set(IWindowsMainService, new SyncDescriptor(WindowsMainService, [machineId, sqmId, devDeviceId, this.userEnv], false));
 		services.set(IAuxiliaryWindowsMainService, new SyncDescriptor(AuxiliaryWindowsMainService, undefined, false));
 
@@ -1473,6 +1481,12 @@ export class CodeApplication extends Disposable {
 		// Workspaces
 		const workspacesChannel = ProxyChannel.fromService(accessor.get(IWorkspacesService), disposables);
 		mainProcessElectronServer.registerChannel('workspaces', workspacesChannel);
+
+		// Spaces - the view-based (WebContentsView child) presentation.
+		// `SpacesViewService` runs every Space as a `WebContentsView` in a single
+		// frame window; it supersedes the multi-window MVP presentation.
+		const spacesChannel = ProxyChannel.fromService(accessor.get(ISpacesViewService), disposables);
+		mainProcessElectronServer.registerChannel(SPACES_CHANNEL_NAME, spacesChannel);
 
 		// Menubar
 		const menubarChannel = ProxyChannel.fromService(accessor.get(IMenubarMainService), disposables);

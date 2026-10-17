@@ -39,9 +39,12 @@ import { getRemoteAuthority } from '../../remote/common/remoteHosts.js';
 import { IStateService } from '../../state/node/state.js';
 import { AgentsWindowOpenSource, IAgentsWindowDraft, IAddRemoveFoldersRequest, INativeOpenFileRequest, INativeWindowConfiguration, IOpenEmptyWindowOptions, IPath, IPathsToWaitFor, isFileToOpen, isFolderToOpen, isWorkspaceToOpen, IWindowOpenable, IWindowSettings } from '../../window/common/window.js';
 import { CodeWindow } from './windowImpl.js';
-import { IOpenConfiguration, IOpenEmptyConfiguration, IWindowsCountChangedEvent, IWindowsMainService, OpenContext, getLastFocused } from './windows.js';
+import { IOpenConfiguration, IOpenEmptyConfiguration, IOpenWorkbenchHostInFrameOptions, IWindowsCountChangedEvent, IWindowsMainService, OpenContext, getLastFocused } from './windows.js';
 import { findWindowOnExtensionDevelopmentPath, findWindowOnFile, findWindowOnWorkspaceOrFolder } from './windowsFinder.js';
 import { IWindowState, WindowsStateHandler } from './windowsStateHandler.js';
+import { IWorkbenchHostRegistry } from '../../window/electron-main/workbenchHostRegistry.js';
+import { IWorkbenchHost } from '../../window/electron-main/workbenchHost.js';
+import { WebContentsViewWorkbenchHost } from '../../spaces/electron-main/webContentsViewWorkbenchHost.js';
 import { IRecent } from '../../workspaces/common/workspaces.js';
 import { hasWorkspaceFileExtension, IAnyWorkspaceIdentifier, ISingleFolderWorkspaceIdentifier, isSingleFolderWorkspaceIdentifier, isWorkspaceIdentifier, IWorkspaceIdentifier, toWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { createEmptyWorkspaceIdentifier, getSingleFolderWorkspaceIdentifier, getWorkspaceIdentifier } from '../../workspaces/node/workspaces.js';
@@ -236,6 +239,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 		@IProtocolMainService private readonly protocolMainService: IProtocolMainService,
 		@IThemeMainService private readonly themeMainService: IThemeMainService,
 		@IAuxiliaryWindowsMainService private readonly auxiliaryWindowsMainService: IAuxiliaryWindowsMainService,
+		@IWorkbenchHostRegistry private readonly workbenchHostRegistry: IWorkbenchHostRegistry,
 		@ICSSDevelopmentService private readonly cssDevelopmentService: ICSSDevelopmentService
 	) {
 		super();
@@ -1509,24 +1513,10 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 		return this.open(openArgs);
 	}
 
-	private async openInBrowserWindow(options: IOpenBrowserWindowOptions): Promise<ICodeWindow> {
-		const windowConfig = this.configurationService.getValue<IWindowSettings | undefined>('window');
-
-		const lastActiveWindow = this.getLastActiveWindow();
-		const newWindowProfile = windowConfig?.newWindowProfile
-			? this.userDataProfilesMainService.profiles.find(profile => profile.name === windowConfig.newWindowProfile) : undefined;
-		const defaultProfile = newWindowProfile ?? (lastActiveWindow?.profile?.isAgentsWindowProfile ? undefined : lastActiveWindow?.profile) ?? this.userDataProfilesMainService.defaultProfile;
-
-		let window: ICodeWindow | undefined;
-		if (!options.forceNewWindow && !options.forceNewTabbedWindow) {
-			window = options.windowToUse || (lastActiveWindow?.config?.isSessionsWindow ? undefined : lastActiveWindow);
-			if (window) {
-				window.focus();
-			}
-		}
+	private async resolveConfiguration(options: IOpenBrowserWindowOptions, windowConfig: IWindowSettings | undefined, defaultProfile: IUserDataProfile): Promise<INativeWindowConfiguration> {
 
 		// Build up the window configuration from provided options, config and environment
-		const configuration: INativeWindowConfiguration = {
+		return {
 
 			// Inherit CLI arguments from environment and/or
 			// the specific properties from this launch if provided
@@ -1598,6 +1588,25 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 
 			isSessionsWindow: isWorkspaceIdentifier(options.workspace) && isEqual(options.workspace.configPath, this.environmentMainService.agentSessionsWorkspace),
 		};
+	}
+
+	private async openInBrowserWindow(options: IOpenBrowserWindowOptions): Promise<ICodeWindow> {
+		const windowConfig = this.configurationService.getValue<IWindowSettings | undefined>('window');
+
+		const lastActiveWindow = this.getLastActiveWindow();
+		const newWindowProfile = windowConfig?.newWindowProfile
+			? this.userDataProfilesMainService.profiles.find(profile => profile.name === windowConfig.newWindowProfile) : undefined;
+		const defaultProfile = newWindowProfile ?? (lastActiveWindow?.profile?.isAgentsWindowProfile ? undefined : lastActiveWindow?.profile) ?? this.userDataProfilesMainService.defaultProfile;
+
+		let window: ICodeWindow | undefined;
+		if (!options.forceNewWindow && !options.forceNewTabbedWindow) {
+			window = options.windowToUse || (lastActiveWindow?.config?.isSessionsWindow ? undefined : lastActiveWindow);
+			if (window) {
+				window.focus();
+			}
+		}
+
+		const configuration = await this.resolveConfiguration(options, windowConfig, defaultProfile);
 
 		// New window
 		if (!window) {
@@ -1832,12 +1841,37 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 
 	getWindowByWebContents(webContents: WebContents): ICodeWindow | undefined {
 		const browserWindow = BrowserWindow.fromWebContents(webContents);
-		if (!browserWindow) {
-			return undefined;
+		if (browserWindow) {
+			const window = this.getWindowById(browserWindow.id);
+
+			return window?.matches(webContents) ? window : undefined;
 		}
 
-		const window = this.getWindowById(browserWindow.id);
+		// A renderer embedded in a `WebContentsView` (Spaces) has no owning
+		// `BrowserWindow`, so resolve it through the host registry instead.
+		const host = this.workbenchHostRegistry.getHostByWebContents(webContents);
+		if (host && host instanceof CodeWindow) {
+			return host;
+		}
 
-		return window?.matches(webContents) ? window : undefined;
+		return undefined;
+	}
+
+	async createWorkbenchHostInFrame(frame: BrowserWindow, options: IOpenWorkbenchHostInFrameOptions): Promise<IWorkbenchHost> {
+		const windowConfig = this.configurationService.getValue<IWindowSettings | undefined>('window');
+		const defaultProfile = this.userDataProfilesMainService.defaultProfile;
+
+		const configuration = await this.resolveConfiguration({
+			cli: options.cli,
+			workspace: options.workspace
+		}, windowConfig, defaultProfile);
+
+		// The host's renderer gets its identity from its `WebContentsView.id`,
+		// which the renderer receives as `configuration.windowId`.
+		const host = this.instantiationService.createInstance(WebContentsViewWorkbenchHost);
+		host.attach(frame);
+		host.load(configuration);
+
+		return host;
 	}
 }

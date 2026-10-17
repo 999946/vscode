@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import electron from 'electron';
+import { IWorkbenchHost } from './workbenchHost.js';
 import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Event } from '../../../base/common/event.js';
 import { IDisposable } from '../../../base/common/lifecycle.js';
@@ -46,7 +47,7 @@ export interface IBaseWindow extends IDisposable {
 	matches(webContents: electron.WebContents): boolean;
 }
 
-export interface ICodeWindow extends IBaseWindow {
+export interface ICodeWindow extends IBaseWindow, IWorkbenchHost {
 
 	readonly onWillLoad: Event<ILoadEvent>;
 	readonly onDidSignalReady: Event<void>;

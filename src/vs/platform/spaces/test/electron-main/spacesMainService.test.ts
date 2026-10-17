@@ -17,6 +17,7 @@ import { NullLogService } from '../../../log/common/log.js';
 import { FocusMode } from '../../../native/common/native.js';
 import { ILoadEvent, LoadReason } from '../../../window/electron-main/window.js';
 import { IOpenConfiguration, IWindowsMainService } from '../../../windows/electron-main/windows.js';
+import { IWorkbenchHostRegistry } from '../../../window/electron-main/workbenchHostRegistry.js';
 import { ISingleFolderWorkspaceIdentifier } from '../../../workspace/common/workspace.js';
 import { ISpace, ISpacesSnapshot, SpaceOperationResult } from '../../common/spaces.js';
 import { SpacesMainService } from '../../electron-main/spacesMainService.js';
@@ -125,6 +126,21 @@ class FakeCodeWindow {
 		this.win.focus();
 	}
 
+	// `IWorkbenchHost` surface (mirrors a `WebContentsView`-backed host)
+	get webContents(): Electron.WebContents | null {
+		return { id: this.id, isDestroyed: () => this.win.destroyed } as unknown as Electron.WebContents;
+	}
+	get visible(): boolean { return this.win.visible; }
+	show(): void { this.win.show(); }
+	hide(): void { this.win.hide(); }
+	getBounds(): Electron.Rectangle { return { x: 0, y: 0, width: this.win.bounds.width, height: this.win.bounds.height }; }
+	setReady(): void { }
+	close(): void { this.win.emit('close'); this.win.destroyed = true; this._onDidClose.fire(); }
+	send(channel: string, ...args: unknown[]): void { }
+	sendWhenReady(channel: string, token: import('../../../../base/common/cancellation.js').CancellationToken, ...args: unknown[]): void { }
+	load(config: import('../../../window/common/window.js').INativeWindowConfiguration, options?: { isReload?: boolean }): void { }
+	whenClosedOrLoaded: Promise<void> = new Promise(() => { });
+
 	fireDidClose(): void {
 		this.win.emit('close');
 		this.win.destroyed = true;
@@ -209,6 +225,7 @@ suite('SpacesMainService', () => {
 
 		service = store.add(new SpacesMainService(
 			windowsMainService as unknown as IWindowsMainService,
+			{ getHostById: () => undefined, getHostByWebContents: () => undefined } as unknown as IWorkbenchHostRegistry,
 			{ getWindows: () => auxiliaryWindows } as unknown as IAuxiliaryWindowsMainService,
 			{ args: { _: [] } } as unknown as IEnvironmentMainService,
 			lifecycleMainService as unknown as ILifecycleMainService,

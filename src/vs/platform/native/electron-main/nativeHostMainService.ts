@@ -36,6 +36,7 @@ import { IThemeMainService } from '../../theme/electron-main/themeMainService.js
 import { defaultWindowState, ICodeWindow, LoadReason } from '../../window/electron-main/window.js';
 import { IColorScheme, IOpenedAuxiliaryWindow, IOpenedMainWindow, IOpenEmptyWindowOptions, IOpenWindowOptions, IPoint, IRectangle, IWindowOpenable } from '../../window/common/window.js';
 import { defaultBrowserWindowOptions, IWindowsMainService, OpenContext } from '../../windows/electron-main/windows.js';
+import { IWorkbenchHostRegistry } from '../../window/electron-main/workbenchHostRegistry.js';
 import { isWorkspaceIdentifier, toWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { IWorkspacesManagementMainService } from '../../workspaces/electron-main/workspacesManagementMainService.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
@@ -67,6 +68,7 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 
 	constructor(
 		@IWindowsMainService private readonly windowsMainService: IWindowsMainService,
+		@IWorkbenchHostRegistry private readonly workbenchHostRegistry: IWorkbenchHostRegistry,
 		@IAuxiliaryWindowsMainService private readonly auxiliaryWindowsMainService: IAuxiliaryWindowsMainService,
 		@IDialogMainService private readonly dialogMainService: IDialogMainService,
 		@ILifecycleMainService private readonly lifecycleMainService: ILifecycleMainService,
@@ -1146,7 +1148,11 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 
 	async notifyReady(windowId: number | undefined): Promise<void> {
 		const window = this.codeWindowById(windowId);
-		window?.setReady();
+		if (window) {
+			window.setReady();
+		} else {
+			this.workbenchHostRegistry.getHostById(windowId!)?.setReady();
+		}
 	}
 
 	async relaunch(windowId: number | undefined, options?: IRelaunchOptions): Promise<void> {

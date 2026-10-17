@@ -19,6 +19,8 @@ import { IProductService } from '../../product/common/productService.js';
 import { IThemeMainService } from '../../theme/electron-main/themeMainService.js';
 import { AgentsWindowOpenSource, IAgentsWindowDraft, IOpenEmptyWindowOptions, IWindowOpenable, IWindowSettings, TitlebarStyle, WindowMinimumSize, hasNativeTitlebar, useNativeFullScreen, useWindowControlsOverlay, zoomLevelToZoomFactor } from '../../window/common/window.js';
 import { ICodeWindow, IWindowState, WindowMode, defaultWindowState } from '../../window/electron-main/window.js';
+import { IWorkbenchHost } from '../../window/electron-main/workbenchHost.js';
+import { ISingleFolderWorkspaceIdentifier, IWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 
 export const IWindowsMainService = createDecorator<IWindowsMainService>('windowsMainService');
 
@@ -55,6 +57,18 @@ export interface IWindowsMainService {
 
 	getWindowById(windowId: number): ICodeWindow | undefined;
 	getWindowByWebContents(webContents: electron.WebContents): ICodeWindow | undefined;
+
+	/**
+	 * Creates a workbench renderer that is hosted inside a `WebContentsView`
+	 * attached to the given frame `BrowserWindow`, instead of a `BrowserWindow`
+	 * of its own. Used by Spaces to run multiple workbenches behind one OS frame.
+	 */
+	createWorkbenchHostInFrame(frame: electron.BrowserWindow, options: IOpenWorkbenchHostInFrameOptions): Promise<IWorkbenchHost>;
+}
+
+export interface IOpenWorkbenchHostInFrameOptions {
+	readonly cli?: NativeParsedArgs;
+	readonly workspace?: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier;
 }
 
 export interface IWindowsCountChangedEvent {

@@ -22,6 +22,7 @@ import { IConfigurationChangeEvent, IConfigurationService } from '../../configur
 import { IDialogMainService } from '../../dialogs/electron-main/dialogMainService.js';
 import { NativeParsedArgs } from '../../environment/common/argv.js';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
+import { IWorkbenchHostRegistry } from '../../window/electron-main/workbenchHostRegistry.js';
 import { isLaunchedFromCli } from '../../environment/node/argvHelper.js';
 import { IFileService } from '../../files/common/files.js';
 import { ILifecycleMainService } from '../../lifecycle/electron-main/lifecycleMainService.js';
@@ -771,6 +772,7 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 		@IProductService private readonly productService: IProductService,
 		@IProtocolMainService protocolMainService: IProtocolMainService,
 		@IWindowsMainService private readonly windowsMainService: IWindowsMainService,
+		@IWorkbenchHostRegistry private readonly workbenchHostRegistry: IWorkbenchHostRegistry,
 		@IStateService stateService: IStateService,
 		@IInstantiationService instantiationService: IInstantiationService
 	) {
@@ -808,6 +810,11 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 
 			this._id = this._win.id;
 			this.setWin(this._win, options);
+
+			// Index this host so `getWindowByWebContents` (shell env, menubar,
+			// zoom, devtools, ...) can resolve it the same way it resolves a
+			// `WebContentsView`-backed Spaces host.
+			this.workbenchHostRegistry.register(this);
 
 			// Apply some state after window creation
 			this.applyState(this.windowState, hasMultipleDisplays);
@@ -1789,6 +1796,22 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 		this.jsCallStackMap.clear();
 	}
 
+	get webContents(): electron.WebContents | null {
+		return this._win?.webContents ?? null;
+	}
+
+	get visible(): boolean {
+		return !!this._win && !this._win.isDestroyed() && this._win.isVisible();
+	}
+
+	show(): void {
+		this._win?.show();
+	}
+
+	hide(): void {
+		this._win?.hide();
+	}
+
 	matches(webContents: electron.WebContents): boolean {
 		return this._win?.webContents.id === webContents.id;
 	}
@@ -1796,7 +1819,10 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 	override dispose(): void {
 		super.dispose();
 
-		// Deregister the loggers for this window
+		// Deregister this host from the registry (fires on window close
+		// because `BaseWindow.setWin` disposes on the `closed` event) and
+		// deregister the loggers for this window.
+		this.workbenchHostRegistry.unregister(this);
 		this.loggerMainService.deregisterLoggers(this.id);
 	}
 }
