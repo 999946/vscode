@@ -2399,6 +2399,13 @@ export default defineConfig(
 					]
 				},
 				{
+					'target': 'test/spaces/**',
+					'restrictions': [
+						'test/spaces/**',
+						'*' // node modules and the `vscode` API types
+					]
+				},
+				{
 					'target': 'test/automation/**',
 					'restrictions': [
 						'test/automation/**',

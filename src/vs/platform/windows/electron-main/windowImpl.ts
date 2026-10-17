@@ -167,7 +167,14 @@ export abstract class BaseWindow extends Disposable implements IBaseWindow {
 	readonly onDidLeaveFullScreen = this._onDidLeaveFullScreen.event;
 
 	private readonly _onDidChangeAlwaysOnTop = this._register(new Emitter<boolean>());
+
 	readonly onDidChangeAlwaysOnTop = this._onDidChangeAlwaysOnTop.event;
+
+	private readonly _onWillFocus = this._register(new Emitter<void>());
+	readonly onWillFocus = this._onWillFocus.event;
+
+	private readonly _onDidRequestAttention = this._register(new Emitter<void>());
+	readonly onDidRequestAttention = this._onDidRequestAttention.event;
 
 	//#endregion
 
@@ -414,14 +421,17 @@ export abstract class BaseWindow extends Disposable implements IBaseWindow {
 	focus(options?: { mode: FocusMode }): void {
 		switch (options?.mode ?? FocusMode.Transfer) {
 			case FocusMode.Transfer:
+				this._onWillFocus.fire();
 				this.doFocusWindow();
 				break;
 
 			case FocusMode.Notify:
+				this._onDidRequestAttention.fire();
 				this.showNotifyFocus();
 				break;
 
 			case FocusMode.Force:
+				this._onWillFocus.fire();
 				if (isMacintosh) {
 					if (electron.app.isHidden()) {
 						// Show first: a hidden app ignores window focus and re-focuses its last active window when un-hidden
@@ -1302,7 +1312,8 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 		// Only do this when running out of sources and not when running tests
 		if (!this.environmentMainService.isBuilt && !this.environmentMainService.extensionTestsLocationURI) {
 			this._register(new RunOnceScheduler(() => {
-				if (this._win && !this._win.isVisible() && !this._win.isMinimized()) {
+				// A window that signaled ready but is not visible was hidden on purpose (e.g. an inactive Space)
+				if (this._win && !this._win.isVisible() && !this._win.isMinimized() && !this.isReady) {
 					this._win.show();
 					this.focus({ mode: FocusMode.Force });
 					this._win.webContents.openDevTools();

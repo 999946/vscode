@@ -47,6 +47,10 @@
 			"project": "vscode-workbench"
 		},
 		{
+			"name": "vs/workbench/contrib/spaces",
+			"project": "vscode-workbench"
+		},
+		{
 			"name": "vs/workbench/contrib/typeHierarchy",
 			"project": "vscode-workbench"
 		},

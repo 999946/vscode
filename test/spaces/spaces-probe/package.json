@@ -1,0 +1,25 @@
+{
+	"name": "spaces-probe",
+	"displayName": "Spaces Probe",
+	"description": "Validation extension for the experimental Spaces feature: records extension host PID, activation count and a tick counter per workspace.",
+	"version": "0.0.1",
+	"publisher": "vscode-spaces-validation",
+	"license": "MIT",
+	"private": true,
+	"engines": {
+		"vscode": "^1.90.0"
+	},
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"main": "./extension.js",
+	"contributes": {
+		"commands": [
+			{
+				"command": "spacesProbe.showState",
+				"title": "Show State",
+				"category": "Spaces Probe"
+			}
+		]
+	}
+}

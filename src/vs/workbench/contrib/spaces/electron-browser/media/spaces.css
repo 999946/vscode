@@ -1,0 +1,41 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.monaco-workbench .spaces-titlebar-widget {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 22px;
+	max-width: 260px;
+	padding: 0 6px;
+	border-radius: 5px;
+	cursor: pointer;
+	color: var(--vscode-titleBar-activeForeground);
+	-webkit-app-region: no-drag;
+	white-space: nowrap;
+}
+
+.monaco-workbench .spaces-titlebar-widget:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.monaco-workbench .spaces-titlebar-widget:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.monaco-workbench .spaces-titlebar-widget > .spaces-titlebar-widget-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.monaco-workbench .spaces-titlebar-widget > .codicon {
+	flex: 0 0 auto;
+	font-size: 14px;
+}
+
+.monaco-workbench .spaces-titlebar-widget > .spaces-titlebar-widget-attention {
+	color: var(--vscode-activityBarBadge-background);
+}

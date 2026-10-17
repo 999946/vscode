@@ -52,6 +52,9 @@ export interface ICodeWindow extends IBaseWindow {
 	readonly onDidSignalReady: Event<void>;
 	readonly onDidDestroy: Event<void>;
 
+	readonly onWillFocus: Event<void>;
+	readonly onDidRequestAttention: Event<void>;
+
 	readonly whenClosedOrLoaded: Promise<void>;
 
 	readonly config: INativeWindowConfiguration | undefined;
