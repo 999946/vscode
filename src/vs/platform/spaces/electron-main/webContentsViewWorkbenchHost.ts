@@ -96,6 +96,28 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 	private attached = false;
 	get visible(): boolean { return this.attached && !this._view.webContents.isDestroyed(); }
 
+	/** Horizontal offset (e.g. shared sidebar width) applied when laying out this view in the frame. */
+	private boundsOffsetX = 0;
+	get offsetX(): number { return this.boundsOffsetX; }
+	setOffsetX(value: number): void { this.boundsOffsetX = value; }
+
+	/**
+	 * Position this workbench view inside the frame's content area, leaving
+	 * `offsetX` pixels at the left edge (occupied by the shared Spaces sidebar).
+	 */
+	setBounds(frameContentBounds: Electron.Rectangle): void {
+		if (this._view.webContents.isDestroyed()) {
+			return;
+		}
+		const width = Math.max(0, frameContentBounds.width - this.boundsOffsetX);
+		this._view.setBounds({
+			x: this.boundsOffsetX,
+			y: 0,
+			width,
+			height: frameContentBounds.height
+		});
+	}
+
 	constructor(
 		private readonly environmentMainService: IEnvironmentMainService,
 		private readonly protocolMainService: IProtocolMainService,

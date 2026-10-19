@@ -1,0 +1,79 @@
+<!-- Copyright (C) Microsoft Corporation. All rights reserved. -->
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+		<style>
+			:root {
+				color-scheme: light dark;
+				font-family: system-ui, -apple-system, sans-serif;
+				font-size: 13px;
+			}
+			* { box-sizing: border-box; margin: 0; padding: 0; }
+			html, body { height: 100%; overflow: hidden; }
+			body { background: var(--bg, #252526); color: var(--fg, #cccccc); display: flex; flex-direction: column; }
+			.header {
+				display: flex; align-items: center; gap: 6px;
+				padding: 8px 10px;
+				font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px;
+				color: var(--muted, #969696);
+				border-bottom: 1px solid var(--border, rgba(128,128,128,0.3));
+				flex: 0 0 auto;
+			}
+			.header .title { flex: 1; font-weight: 600; }
+			.header button {
+				background: transparent; border: none; color: var(--muted, #969696);
+				cursor: pointer; padding: 2px 4px; border-radius: 3px; font-size: 13px;
+			}
+			.header button:hover { background: rgba(128,128,128,0.25); color: var(--fg, #cccccc); }
+			.list { flex: 1; overflow-y: auto; padding: 4px; }
+			.row {
+				display: flex; align-items: center; gap: 8px;
+				padding: 5px 8px; border-radius: 4px; cursor: pointer;
+				margin-bottom: 2px; user-select: none;
+			}
+			.row:hover { background: rgba(128,128,128,0.15); }
+			.row.active { background: rgba(0,120,215,0.3); }
+			.row .icon { flex: 0 0 auto; font-size: 14px; }
+			.row .main { flex: 1; min-width: 0; }
+			.row .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+			.row .workspace { font-size: 11px; color: var(--muted, #969696); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+			.row.active .workspace { color: var(--fg, #cccccc); }
+			.row .badge {
+				font-size: 10px; padding: 0 6px; border-radius: 8px;
+				background: #0078d4; color: white; flex: 0 0 auto;
+			}
+			.row .actions { display: none; flex: 0 0 auto; gap: 2px; }
+			.row:hover .actions { display: flex; }
+			.row .actions button {
+				background: transparent; border: none; color: var(--muted, #969696);
+				cursor: pointer; padding: 2px 4px; border-radius: 3px; font-size: 12px;
+			}
+			.row .actions button:hover { background: rgba(128,128,128,0.25); color: var(--fg, #cccccc); }
+			.empty { padding: 16px 12px; color: var(--muted, #969696); line-height: 1.5; }
+			.footer {
+				padding: 6px 8px; border-top: 1px solid var(--border, rgba(128,128,128,0.3));
+				flex: 0 0 auto;
+			}
+			.footer button {
+				width: 100%; display: flex; align-items: center; gap: 6px;
+				padding: 6px 8px; background: transparent; border: none;
+				color: var(--fg, #cccccc); cursor: pointer; border-radius: 4px; font-size: 13px;
+			}
+			.footer button:hover { background: rgba(128,128,128,0.15); }
+		</style>
+	</head>
+	<body>
+		<div class="header">
+			<span class="title" id="count">Spaces</span>
+			<button id="newBtn" title="New Space">+</button>
+		</div>
+		<div class="list" id="list"></div>
+		<div class="footer">
+			<button id="openFolderBtn">Open Folder as Space</button>
+		</div>
+
+		<script src="./spacesSidebar.js"></script>
+	</body>
+</html>

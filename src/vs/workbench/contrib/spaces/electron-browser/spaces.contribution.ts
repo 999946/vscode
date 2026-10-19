@@ -28,7 +28,6 @@ import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.
 import { IStatusbarEntryAccessor, IStatusbarService, StatusbarAlignment } from '../../../services/statusbar/browser/statusbar.js';
 import '../../../services/spaces/electron-browser/spacesService.js';
 import { AddCurrentWindowAsSpaceAction, CloseCurrentSpaceAction, ListSpacesAction, NewEmptySpaceAction, OpenFolderAsNewSpaceAction, OpenWorkspaceAsNewSpaceAction, RenameCurrentSpaceAction, SpacesCommandId, SwitchSpaceAction, TitleBarSpacesPickerAction } from './spacesActions.js';
-import './spacesSidebarView.js';
 
 //#region Configuration
 

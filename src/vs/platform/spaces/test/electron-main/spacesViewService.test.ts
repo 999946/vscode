@@ -116,6 +116,7 @@ suite('SpacesViewService', () => {
 			windowsMainService as unknown as IWindowsMainService,
 			lifecycleMainService as unknown as ILifecycleMainService,
 			new FakeFrameProvider(),
+			{} as import('../../../../platform/instantiation/common/instantiation.js').IInstantiationService,
 			new NullLogService()
 		));
 		store.add(svc.onDidChangeSpaces(snapshot => changes.push(snapshot)));

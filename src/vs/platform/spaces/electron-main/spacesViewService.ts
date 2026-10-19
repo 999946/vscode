@@ -17,6 +17,8 @@ import { WindowMode, defaultWindowState } from '../../window/electron-main/windo
 import { ISingleFolderWorkspaceIdentifier, isSingleFolderWorkspaceIdentifier, isWorkspaceIdentifier, IWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { ICommonSpacesService, ISpaceOperationResult, ISpacesSnapshot, ISpaceWorkspace, SpaceOperationResult } from '../common/spaces.js';
 import { SpacesModel } from '../common/spacesModel.js';
+import { SpacesSidebarHost, SPACES_SIDEBAR_WIDTH } from './spacesSidebarHost.js';
+import { WebContentsViewWorkbenchHost } from './webContentsViewWorkbenchHost.js';
 
 export const ISpacesViewService = createDecorator<ISpacesViewService>('spacesViewService');
 
@@ -82,6 +84,10 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 	private _frame: electron.BrowserWindow | undefined = undefined;
 	get frame(): electron.BrowserWindow | undefined { return this._frame; }
 
+	/** The shared Spaces sidebar host in the frame (created with the frame). */
+	private sidebarHost: SpacesSidebarHost | undefined = undefined;
+	get sidebar(): SpacesSidebarHost | undefined { return this.sidebarHost; }
+
 	/** host per Space, mapped by Space id. */
 	private readonly hosts = new Map<string, IWorkbenchHost>();
 
@@ -91,6 +97,7 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		@IWindowsMainService private readonly windowsMainService: IWindowsMainService,
 		@ILifecycleMainService private readonly lifecycleMainService: ILifecycleMainService,
 		@ISpacesFrameProvider private readonly frameProvider: ISpacesFrameProvider,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ILogService private readonly logService: ILogService
 	) {
 		super();
@@ -200,6 +207,14 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 			return { result: SpaceOperationResult.OpenFailed };
 		}
 
+		// Place the workbench to the right of the shared sidebar and lay it out.
+		if (host instanceof WebContentsViewWorkbenchHost) {
+			host.setOffsetX(SPACES_SIDEBAR_WIDTH);
+		}
+		if (!frame.isDestroyed()) {
+			host.setBounds?.(frame.getContentBounds());
+		}
+
 		const space = this.model.add({ windowId: host.id, workspace: workspace ? toSpaceWorkspace(workspace) : undefined });
 		this.hosts.set(space.id, host);
 		this.registerHostListeners(host, space.id);
@@ -268,13 +283,56 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		if (typeof (frame as { on?: (event: string, cb: () => void) => void }).on === 'function') {
 			(frame as { on: (event: string, cb: () => void) => void }).on('closed', () => {
 				this._frame = undefined;
+				this.sidebarHost?.dispose();
+				this.sidebarHost = undefined;
+			});
+		}
+
+		// Listen to content resizes so the shared sidebar and every Space view
+		// stay correctly positioned. Only real frames have `on`.
+		if (typeof (frame as { on?: (event: string, cb: () => void) => void }).on === 'function') {
+			(frame as { on: (event: string, cb: () => void) => void }).on('resize', () => {
+				this.layoutViews();
 			});
 		}
 
 		this._frame = frame;
+
+		// Create the shared sidebar and lay out Space views. Tests substitute a
+		// minimal fake frame without a `contentView`, so guard on the surface we
+		// actually need — a real BrowserWindow always satisfies it.
+		const hasFrameSurface =
+			typeof (frame as { getContentBounds?: () => Electron.Rectangle }).getContentBounds === 'function' &&
+			typeof (frame as { contentView?: { addChildView?: unknown } }).contentView?.addChildView === 'function';
+
+		if (hasFrameSurface) {
+			try {
+				this.sidebarHost = this.instantiationService.createInstance(SpacesSidebarHost, frame, this);
+			} catch (error) {
+				this.logService.error(`[spaces:view] failed to create shared sidebar: ${error}`);
+			}
+
+			this.layoutViews();
+		}
+
 		this.logService.debug('[spaces:view] created shared frame window');
 
 		return frame;
+	}
+
+	/**
+	 * Re-positions the shared sidebar (left) and every Space workbench view
+	 * (right of the sidebar) to the current frame content bounds.
+	 */
+	private layoutViews(): void {
+		if (!this._frame || this._frame.isDestroyed()) {
+			return;
+		}
+		const bounds = this._frame.getContentBounds();
+		this.sidebarHost?.setBounds(bounds);
+		for (const host of this.hosts.values()) {
+			host.setBounds(bounds);
+		}
 	}
 
 	private activate(spaceId: string): ISpaceOperationResult {

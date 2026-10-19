@@ -70,6 +70,13 @@ export interface IWorkbenchHost extends IDisposable {
 
 	focus(options?: { mode: FocusMode }): void;
 	getBounds(): Electron.Rectangle;
+
+	/**
+	 * Positions the host inside its frame's content area. Implemented by
+	 * view-based hosts (e.g. `WebContentsViewWorkbenchHost`); window-based hosts
+	 * (`CodeWindow`) own their frame so they have nothing to position.
+	 */
+	setBounds?(frameContentBounds: Electron.Rectangle): void;
 	matches(webContents: Electron.WebContents): boolean;
 
 	readonly onWillLoad: Event<ILoadEvent>;
