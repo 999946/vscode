@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import electron from 'electron';
-import { Disposable } from '../../../base/common/lifecycle.js';
+import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { FileAccess } from '../../../base/common/network.js';
 import { validatedIpcMain } from '../../../base/parts/ipc/electron-main/ipcMain.js';
 import { basename, extname } from '../../../base/common/resources.js';
@@ -39,7 +39,7 @@ export class SpacesSidebarHost extends Disposable {
 
 	constructor(
 		frame: electron.BrowserWindow,
-		private readonly spacesViewService: ISpacesViewService,
+		private readonly spacesViewService: Omit<ISpacesViewService, '_serviceBrand'>,
 		@IThemeMainService private readonly themeMainService: IThemeMainService,
 		@IDialogMainService private readonly dialogMainService: IDialogMainService,
 		@ICommandService private readonly commandService: ICommandService,
@@ -62,12 +62,13 @@ export class SpacesSidebarHost extends Disposable {
 		frame.contentView.addChildView(this.view);
 		this.setBounds(frame.getContentBounds());
 
-		this._register(validatedIpcMain.handle(SPACES_SIDEBAR_CHANNEL, async (event, request: ISpacesSidebarRpcRequest) => {
+		this._register(toDisposable(() => validatedIpcMain.removeHandler(SPACES_SIDEBAR_CHANNEL)));
+		validatedIpcMain.handle(SPACES_SIDEBAR_CHANNEL, async (event, request: ISpacesSidebarRpcRequest) => {
 			if (event.sender.id !== this.view.webContents.id) {
 				return undefined;
 			}
 			return this.handleRpc(request);
-		}));
+		});
 
 		this._register(this.spacesViewService.onDidChangeSpaces(() => this.pushChange()));
 

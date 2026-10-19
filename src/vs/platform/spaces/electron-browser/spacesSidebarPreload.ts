@@ -5,7 +5,7 @@
 
 // Only `import type` is allowed in preload scripts — Electron preloads cannot
 // resolve module imports at runtime.
-import type { ISpacesSidebarRpcRequest } from '../common/spacesSidebarRpc.js';
+import type { ISpacesSidebarRpcRequest, SpacesSidebarRpcMethod } from '../common/spacesSidebarRpc.js';
 
 const { ipcRenderer, contextBridge } = require('electron') as typeof import('electron');
 
@@ -21,7 +21,7 @@ const { ipcRenderer, contextBridge } = require('electron') as typeof import('ele
  * bootstrap for what is a small chrome surface.
  */
 contextBridge.exposeInMainWorld('spacesSidebar', {
-	invoke(method: string, ...args: unknown[]): Promise<unknown> {
+	invoke(method: SpacesSidebarRpcMethod, ...args: unknown[]): Promise<unknown> {
 		const request: ISpacesSidebarRpcRequest = { method, args };
 		return ipcRenderer.invoke('vscode:spacesSidebar', request);
 	},

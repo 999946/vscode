@@ -18,7 +18,6 @@ import { ISpacesFrameProvider, SpacesViewService } from '../../electron-main/spa
 import { IConfigurationService } from '../../../configuration/common/configuration.js';
 import { IFileService } from '../../../files/common/files.js';
 import { IApplicationStorageMainService } from '../../../storage/electron-main/storageMainService.js';
-import { StorageScope, StorageTarget } from '../../../storage/common/storage.js';
 
 /**
  * Fake `WebContentsView`-backed host. Tracks its own visibility like a view in

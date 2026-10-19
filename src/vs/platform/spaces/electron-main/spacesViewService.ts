@@ -440,7 +440,7 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		const bounds = this._frame.getContentBounds();
 		this.sidebarHost?.setBounds(bounds);
 		for (const host of this.hosts.values()) {
-			host.setBounds(bounds);
+			host.setBounds?.(bounds);
 		}
 	}
 

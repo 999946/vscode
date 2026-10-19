@@ -35,7 +35,6 @@ declare const window: Window & { spacesSidebar: ISpacesSidebarBridge };
 const PANEL_WIDTH = 260;
 const PANEL_MIN_WIDTH = 180;
 const PANEL_MAX_WIDTH = 560;
-const PANEL_COLLAPSED_WIDTH = 42;
 const COLLAPSE_DELAY_MS = 180;
 
 const STORAGE_COLLAPSED = 'paracode.spaces.sidebar.collapsed';

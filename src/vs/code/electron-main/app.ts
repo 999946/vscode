@@ -106,7 +106,6 @@ import { ICodeWindow } from '../../platform/window/electron-main/window.js';
 import { WindowsMainService } from '../../platform/windows/electron-main/windowsMainService.js';
 import { IWorkbenchHostRegistry, WorkbenchHostRegistry } from '../../platform/window/electron-main/workbenchHostRegistry.js';
 import { DefaultSpacesFrameProvider, ISpacesFrameProvider, ISpacesViewService, SpacesViewService } from '../../platform/spaces/electron-main/spacesViewService.js';
-import { ISpacesMainService, SpacesMainService } from '../../platform/spaces/electron-main/spacesMainService.js';
 import { SPACES_CHANNEL_NAME } from '../../platform/spaces/common/spaces.js';
 import { ActiveWindowManager } from '../../platform/windows/node/windowTracker.js';
 import { hasWorkspaceFileExtension } from '../../platform/workspace/common/workspace.js';
@@ -1246,7 +1245,6 @@ export class CodeApplication extends Disposable {
 		// Windows
 		services.set(IWorkbenchHostRegistry, new SyncDescriptor(WorkbenchHostRegistry, undefined, false));
 		services.set(ISpacesFrameProvider, new SyncDescriptor(DefaultSpacesFrameProvider, undefined, false));
-		services.set(ISpacesMainService, new SyncDescriptor(SpacesMainService, undefined, false));
 		services.set(ISpacesViewService, new SyncDescriptor(SpacesViewService, undefined, false));
 		services.set(IWindowsMainService, new SyncDescriptor(WindowsMainService, [machineId, sqmId, devDeviceId, this.userEnv], false));
 		services.set(IAuxiliaryWindowsMainService, new SyncDescriptor(AuxiliaryWindowsMainService, undefined, false));

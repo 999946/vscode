@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
 import { basename, dirname } from '../../../../base/common/resources.js';
 import { ITerminalService } from '../../terminal/browser/terminal.js';
@@ -36,7 +36,6 @@ class SpacesTabPersistenceContribution extends Disposable implements IWorkbenchC
 
 	private readonly store = this._register(new DisposableStore());
 	private timer: number | null = null;
-	private restored = false;
 
 	constructor(
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
@@ -60,8 +59,13 @@ class SpacesTabPersistenceContribution extends Disposable implements IWorkbenchC
 		this.restore();
 
 		// Sidebar tab actions routed to this Space's renderer by the main process.
-		this.store.add(ipcRenderer.on('spaces:newTab', () => this.newTab()));
-		this.store.add(ipcRenderer.on('spaces:closeTab', (_event, tabId: string) => this.closeTab(tabId)));
+		const newTabListener = () => { void this.newTab(); };
+		ipcRenderer.on('spaces:newTab', newTabListener);
+		this.store.add(toDisposable(() => ipcRenderer.removeListener('spaces:newTab', newTabListener)));
+
+		const closeTabListener = (_event: unknown, tabId: unknown) => { void this.closeTab(String(tabId)); };
+		ipcRenderer.on('spaces:closeTab', closeTabListener);
+		this.store.add(toDisposable(() => ipcRenderer.removeListener('spaces:closeTab', closeTabListener)));
 	}
 
 	private scheduleReport(): void {
@@ -113,9 +117,10 @@ class SpacesTabPersistenceContribution extends Disposable implements IWorkbenchC
 	private async report(): Promise<void> {
 		const tabs = this.collectTabs();
 		const activeEditor = this.editorGroupsService.activeGroup.activeEditor;
+		const activeResource = activeEditor?.resource;
 		let activeTabIndex = 0;
-		if (activeEditor?.resource && activeEditor.resource.scheme === 'file') {
-			activeTabIndex = tabs.findIndex(t => t.kind === 'editor' && t.value === activeEditor.resource.path);
+		if (activeResource && activeResource.scheme === 'file') {
+			activeTabIndex = tabs.findIndex(t => t.kind === 'editor' && t.value === activeResource.path);
 		}
 		const state: ISpaceTabState = { tabs, activeTabIndex: Math.max(0, activeTabIndex) };
 		await this.spacesService.updateSpaceTabs(state);
@@ -128,7 +133,6 @@ class SpacesTabPersistenceContribution extends Disposable implements IWorkbenchC
 			// the currently active Space when this renderer has no Space yet.
 			const state = await this.spacesService.getPersistedTabStateForWindow();
 			if (!state || !state.tabs.length) {
-				this.restored = true;
 				return;
 			}
 
@@ -150,8 +154,6 @@ class SpacesTabPersistenceContribution extends Disposable implements IWorkbenchC
 			}
 		} catch (error) {
 			this.logService.warn(`[spaces:tabs] failed to restore tab state: ${error}`);
-		} finally {
-			this.restored = true;
 		}
 	}
 
