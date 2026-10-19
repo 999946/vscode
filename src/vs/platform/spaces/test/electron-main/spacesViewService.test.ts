@@ -15,6 +15,10 @@ import { ISingleFolderWorkspaceIdentifier, IWorkspaceIdentifier } from '../../..
 import { ILoadEvent, LoadReason } from '../../../window/electron-main/window.js';
 import { ISpace, ISpacesSnapshot, SpaceOperationResult } from '../../common/spaces.js';
 import { ISpacesFrameProvider, SpacesViewService } from '../../electron-main/spacesViewService.js';
+import { IConfigurationService } from '../../../configuration/common/configuration.js';
+import { IFileService } from '../../../files/common/files.js';
+import { IApplicationStorageMainService } from '../../../storage/electron-main/storageMainService.js';
+import { StorageScope, StorageTarget } from '../../../storage/common/storage.js';
 
 /**
  * Fake `WebContentsView`-backed host. Tracks its own visibility like a view in
@@ -102,6 +106,42 @@ class FakeWindowsMainService implements Pick<IWindowsMainService, 'createWorkben
 	}
 }
 
+function makeConfigService(): IConfigurationService {
+	return {
+		_serviceBrand: undefined,
+		getValue: (key?: string) => key === 'spaces.root' ? null : false,
+		updateValue: async () => { }
+	} as unknown as IConfigurationService;
+}
+
+function makeFileService(): IFileService {
+	return {
+		_serviceBrand: undefined,
+		createFolder: async () => ({}) as never,
+		del: async () => { },
+		readdir: async () => []
+	} as unknown as IFileService;
+}
+
+function makeAppStorageService(): IApplicationStorageMainService {
+	const map = new Map<string, string>();
+	return {
+		_serviceBrand: undefined,
+		whenReady: Promise.resolve(),
+		get: (key: string) => map.get(key),
+		store: (key: string, value: string | boolean | number | undefined | null) => {
+			if (value === undefined || value === null) { map.delete(key); }
+			else { map.set(key, String(value)); }
+		},
+		remove: (key: string) => { map.delete(key); },
+		keys: () => [...map.keys()],
+		getBoolean: () => false,
+		getNumber: () => 0,
+		switch: () => { throw new Error('not implemented'); },
+		isNew: () => false
+	} as unknown as IApplicationStorageMainService;
+}
+
 suite('SpacesViewService', () => {
 
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
@@ -117,7 +157,10 @@ suite('SpacesViewService', () => {
 			lifecycleMainService as unknown as ILifecycleMainService,
 			new FakeFrameProvider(),
 			{} as import('../../../../platform/instantiation/common/instantiation.js').IInstantiationService,
-			new NullLogService()
+			new NullLogService(),
+			makeConfigService(),
+			makeFileService(),
+			makeAppStorageService()
 		));
 		store.add(svc.onDidChangeSpaces(snapshot => changes.push(snapshot)));
 		return svc;
@@ -287,4 +330,71 @@ suite('SpacesViewService', () => {
 		assert.strictEqual(a.visible, false, 'do not flash a space while quitting');
 		assert.strictEqual(await (async () => (await service.getSpaces(undefined)).activeSpaceId)(), undefined);
 	});
+
+	test('updateSpaceTabs persists per-Space tab state and getSpaceTabs reads it back', async () => {
+		const { a } = await createTwoSpaces();
+		const spaceA = await spaceOf(a.id);
+
+		await service.updateSpaceTabs(spaceA.windowId, {
+			tabs: [
+				{ kind: 'editor', label: 'a.ts', value: '/work/a.ts', detail: '/work' },
+				{ kind: 'terminal', label: 'bash', value: '/work' }
+			], activeTabIndex: 0
+		});
+
+		const state = await service.getSpaceTabs(undefined, spaceA.id);
+		assert.strictEqual(state.tabs.length, 2);
+		assert.strictEqual(state.tabs[0].kind, 'editor');
+		assert.strictEqual(state.tabs[0].value, '/work/a.ts');
+		assert.strictEqual(state.tabs[1].kind, 'terminal');
+		assert.strictEqual(state.activeTabIndex, 0);
+	});
+
+	test('getPersistedTabStateForWindow resolves the calling Space by window id', async () => {
+		const { a } = await createTwoSpaces();
+		const spaceA = await spaceOf(a.id);
+
+		await service.updateSpaceTabs(spaceA.windowId, { tabs: [{ kind: 'editor', label: 'x.ts', value: '/x.ts' }], activeTabIndex: 0 });
+		const state = await service.getPersistedTabStateForWindow(spaceA.windowId);
+		assert.strictEqual(state.tabs.length, 1);
+		assert.strictEqual(state.tabs[0].value, '/x.ts');
+
+		// Unknown window yields empty state.
+		const empty = await service.getPersistedTabStateForWindow(99999);
+		assert.deepStrictEqual(empty, { tabs: [], activeTabIndex: 0 });
+	});
+
+	test('getSidebarSettings reads the configured spaces settings', async () => {
+		const settings = await service.getSidebarSettings(undefined);
+		assert.strictEqual(settings.spacesRoot, null);
+		assert.strictEqual(settings.showSpaceTabs, false);
+		assert.strictEqual(settings.showSpaceInitials, false);
+	});
+
+	test('sendToSpace routes a message to the Space host renderer', async () => {
+		const { a } = await createTwoSpaces();
+		const spaceA = await spaceOf(a.id);
+		const messages: Array<{ channel: string; args: unknown[] }> = [];
+		a.send = (channel: string, ...args: unknown[]) => {
+			messages.push({ channel, args });
+		};
+
+		await service.sendToSpace(undefined, spaceA.id, 'spaces:newTab');
+		assert.strictEqual(messages.length, 1);
+		assert.strictEqual(messages[0].channel, 'spaces:newTab');
+	});
+
+	test('createSpace creates a folder under the configured spaces root', async () => {
+		// Configure a spaces root through the fake config service.
+		const fakeConfig = (service as unknown as { configurationService: IConfigurationService }).configurationService as { getValue: (k?: string) => unknown };
+		fakeConfig.getValue = (key?: string) => key === 'spaces.root' ? '/tmp/spaces' : false;
+		const fakeFile = (service as unknown as { fileService: IFileService }).fileService as { createFolder: (uri: import('../../../../base/common/uri.js').URI) => Promise<unknown> };
+		const created: unknown[] = [];
+		fakeFile.createFolder = async (uri) => { created.push(uri); return {} as never; };
+
+		const result = await service.createSpace(undefined, 'my space');
+		assert.strictEqual(result.result, SpaceOperationResult.Ok);
+		assert.strictEqual(created.length, 1);
+	});
+
 });

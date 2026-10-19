@@ -13,7 +13,10 @@ import { IDialogMainService } from '../../dialogs/electron-main/dialogMainServic
 import { ILogService } from '../../log/common/log.js';
 import { IThemeMainService } from '../../theme/electron-main/themeMainService.js';
 import { SpaceOperationResult, ISpaceWorkspace } from '../common/spaces.js';
-import { ISpacesSidebarData, ISpacesSidebarRpcRequest, ISpacesSidebarSpace, SpacesSidebarRpcMethod, SPACES_SIDEBAR_CHANGED_CHANNEL, SPACES_SIDEBAR_CHANNEL } from '../common/spacesSidebarRpc.js';
+import { ISpacesSettings } from '../common/spacesConfig.js';
+import { ISpacesSidebarData, ISpacesSidebarRpcRequest, ISpacesSidebarSpace, ISpacesSidebarTab, SpacesSidebarRpcMethod, SPACES_SIDEBAR_CHANGED_CHANNEL, SPACES_SIDEBAR_CHANNEL } from '../common/spacesSidebarRpc.js';
+import type { ISerializedSpaceTab } from '../common/spacesTabs.js';
+import { ICommandService } from '../../commands/common/commands.js';
 import type { ISpacesViewService } from './spacesViewService.js';
 
 /** Default width of the shared Spaces sidebar in the frame window. */
@@ -39,6 +42,7 @@ export class SpacesSidebarHost extends Disposable {
 		private readonly spacesViewService: ISpacesViewService,
 		@IThemeMainService private readonly themeMainService: IThemeMainService,
 		@IDialogMainService private readonly dialogMainService: IDialogMainService,
+		@ICommandService private readonly commandService: ICommandService,
 		@ILogService private readonly logService: ILogService
 	) {
 		super();
@@ -101,6 +105,28 @@ export class SpacesSidebarHost extends Disposable {
 				return this.toSidebarData();
 			case 'createEmptySpace':
 				return this.spacesViewService.createEmptySpace(undefined);
+			case 'createSpace':
+				return this.spacesViewService.createSpace(undefined, args[0] as string);
+			case 'getSettings':
+				return this.toSidebarSettings();
+			case 'setSetting':
+				await this.spacesViewService.setSidebarSetting(undefined, args[0] as string, args[1]);
+				return this.toSidebarSettings();
+			case 'getSpaceTabs': {
+				const state = await this.spacesViewService.getSpaceTabs(undefined, args[0] as string);
+				return { tabs: state.tabs.map((t, i) => toSidebarTab(t, i === state.activeTabIndex)) };
+			}
+			case 'openSettings':
+				await this.commandService.executeCommand('workbench.action.openSettings', 'spaces');
+				return undefined;
+			case 'newTabInSpace':
+				await this.spacesViewService.sendToSpace(undefined, args[0] as string, 'spaces:newTab');
+				return undefined;
+			case 'closeTab': {
+				const [spaceId, tabId] = args as [string, string];
+				await this.spacesViewService.sendToSpace(undefined, spaceId, 'spaces:closeTab', tabId);
+				return undefined;
+			}
 			case 'openFolderAsSpace': {
 				const result = await this.dialogMainService.showOpenDialog({
 					title: 'Open Folder as New Space',
@@ -116,6 +142,8 @@ export class SpacesSidebarHost extends Disposable {
 				return this.spacesViewService.switchToSpace(undefined, args[0] as string);
 			case 'closeSpace':
 				return this.spacesViewService.closeSpace(undefined, args[0] as string);
+			case 'deleteSpace':
+				return this.spacesViewService.deleteSpace(undefined, args[0] as string);
 			case 'renameSpace':
 				return this.spacesViewService.renameSpace(undefined, args[0] as string, args[1] as string);
 			default:
@@ -134,9 +162,18 @@ export class SpacesSidebarHost extends Disposable {
 		}
 	}
 
+	private async toSidebarSettings(): Promise<ISpacesSettings> {
+		return this.spacesViewService.getSidebarSettings(undefined);
+	}
+
 	private async toSidebarData(): Promise<ISpacesSidebarData> {
 		const snapshot = await this.spacesViewService.getSpaces(undefined);
 		const activeId = snapshot.activeSpaceId;
+		const tabCounts = new Map<string, number>();
+		await Promise.all(snapshot.spaces.map(async space => {
+			const state = await this.spacesViewService.getSpaceTabs(undefined, space.id);
+			tabCounts.set(space.id, state.tabs.length);
+		}));
 		const spaces: ISpacesSidebarSpace[] = snapshot.spaces.map(space => ({
 			id: space.id,
 			name: space.name,
@@ -144,10 +181,21 @@ export class SpacesSidebarHost extends Disposable {
 			workspaceUri: space.workspace?.uri,
 			state: space.state,
 			needsAttention: space.needsAttention,
-			isCurrent: space.id === activeId
+			isCurrent: space.id === activeId,
+			tabCount: tabCounts.get(space.id) ?? 0
 		}));
 		return { spaces };
 	}
+}
+
+function toSidebarTab(tab: ISerializedSpaceTab, active: boolean): ISpacesSidebarTab {
+	return {
+		id: `${tab.kind}-${tab.value ?? tab.label}`,
+		kind: tab.kind,
+		label: tab.customTitle ?? tab.label,
+		detail: tab.detail,
+		active
+	};
 }
 
 function toSidebarWorkspaceLabel(workspace: ISpaceWorkspace): string {

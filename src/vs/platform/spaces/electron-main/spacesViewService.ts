@@ -11,6 +11,12 @@ import { URI, UriComponents } from '../../../base/common/uri.js';
 import { createDecorator, IInstantiationService } from '../../instantiation/common/instantiation.js';
 import { ILifecycleMainService } from '../../lifecycle/electron-main/lifecycleMainService.js';
 import { ILogService } from '../../log/common/log.js';
+import { IFileService } from '../../files/common/files.js';
+import { ConfigurationTarget, IConfigurationService } from '../../configuration/common/configuration.js';
+import { IApplicationStorageMainService } from '../../storage/electron-main/storageMainService.js';
+import { ISpacesSettings, SPACES_ROOT_SETTING, SPACES_SHOW_INITIALS_SETTING, SPACES_SHOW_TABS_SETTING } from '../common/spacesConfig.js';
+import { ISpaceTabState, emptySpaceTabState } from '../common/spacesTabs.js';
+import { SpacesTabStore } from './spacesTabStore.js';
 import { IWorkbenchHost } from '../../window/electron-main/workbenchHost.js';
 import { IWindowsMainService, defaultBrowserWindowOptions } from '../../windows/electron-main/windows.js';
 import { WindowMode, defaultWindowState } from '../../window/electron-main/window.js';
@@ -23,7 +29,6 @@ import { WebContentsViewWorkbenchHost } from './webContentsViewWorkbenchHost.js'
 export const ISpacesViewService = createDecorator<ISpacesViewService>('spacesViewService');
 
 export interface ISpacesViewService extends AddFirstParameterToFunctions<ICommonSpacesService, Promise<unknown> /* only methods, not events */, number | undefined /* window ID */> { }
-
 /**
  * Creates the single shared frame window that hosts all Space views.
  * Injectable so tests can substitute a fake `BrowserWindow`.
@@ -77,6 +82,8 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 
 	private readonly model = this._register(new SpacesModel());
 
+	private readonly tabStore: SpacesTabStore;
+
 	private readonly _onDidChangeSpaces = this._register(new Emitter<ISpacesSnapshot>());
 	readonly onDidChangeSpaces = this._onDidChangeSpaces.event;
 
@@ -98,15 +105,55 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		@ILifecycleMainService private readonly lifecycleMainService: ILifecycleMainService,
 		@ISpacesFrameProvider private readonly frameProvider: ISpacesFrameProvider,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@ILogService private readonly logService: ILogService
+		@ILogService private readonly logService: ILogService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IFileService private readonly fileService: IFileService,
+		@IApplicationStorageMainService applicationStorageMainService: IApplicationStorageMainService
 	) {
 		super();
+		this.tabStore = new SpacesTabStore(applicationStorageMainService, logService);
 
 		this._register(this.model.onDidChange(() => this._onDidChangeSpaces.fire(this.model.snapshot())));
 	}
 
 	async getSpaces(windowId: number | undefined): Promise<ISpacesSnapshot> {
 		return this.model.snapshot();
+	}
+
+	async getSidebarSettings(windowId: number | undefined): Promise<ISpacesSettings> {
+		return {
+			spacesRoot: this.configurationService.getValue<string>(SPACES_ROOT_SETTING) ?? null,
+			showSpaceTabs: this.configurationService.getValue<boolean>(SPACES_SHOW_TABS_SETTING) ?? false,
+			showSpaceInitials: this.configurationService.getValue<boolean>(SPACES_SHOW_INITIALS_SETTING) ?? false
+		};
+	}
+
+	async setSidebarSetting(windowId: number | undefined, key: string, value: unknown): Promise<void> {
+		const setting = key === 'spacesRoot' ? SPACES_ROOT_SETTING : key === 'showSpaceTabs' ? SPACES_SHOW_TABS_SETTING : key === 'showSpaceInitials' ? SPACES_SHOW_INITIALS_SETTING : undefined;
+		if (setting) {
+			await this.configurationService.updateValue(setting, value, ConfigurationTarget.USER);
+		}
+	}
+
+	async getSpaceTabs(windowId: number | undefined, spaceId: string): Promise<ISpaceTabState> {
+		return this.tabStore.get(spaceId);
+	}
+
+	async updateSpaceTabs(windowId: number | undefined, state: ISpaceTabState): Promise<void> {
+		const space = typeof windowId === 'number' ? this.model.getSpaceByWindowId(windowId) : undefined;
+		if (!space) {
+			return;
+		}
+		this.tabStore.set(space.id, state);
+		this._onDidChangeSpaces.fire(this.model.snapshot());
+	}
+
+	async getPersistedTabStateForWindow(windowId: number | undefined): Promise<ISpaceTabState> {
+		const space = typeof windowId === 'number' ? this.model.getSpaceByWindowId(windowId) : undefined;
+		if (!space) {
+			return emptySpaceTabState();
+		}
+		return this.tabStore.get(space.id);
 	}
 
 	async addCurrentWindowAsSpace(windowId: number | undefined): Promise<ISpaceOperationResult> {
@@ -147,6 +194,68 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 
 	async switchToSpace(windowId: number | undefined, spaceId: string): Promise<ISpaceOperationResult> {
 		return this.activate(spaceId);
+	}
+
+	async createSpace(windowId: number | undefined, name: string): Promise<ISpaceOperationResult> {
+		const spacesRoot = this.configurationService.getValue<string>(SPACES_ROOT_SETTING);
+		if (spacesRoot) {
+			// Create the Space folder on disk, then open it as a Space.
+			const folderUri = URI.file(this.joinRootFolder(spacesRoot, name));
+			try {
+				await this.fileService.createFolder(folderUri);
+			} catch (error) {
+				this.logService.warn(`[spaces:view] failed to create Space folder '${folderUri.fsPath}': ${error}`);
+				return { result: SpaceOperationResult.OpenFailed };
+			}
+			return this.createHostAsSpace({ id: folderUri.fsPath, uri: folderUri });
+		}
+		return this.createHostAsSpace(undefined);
+	}
+
+	async deleteSpace(windowId: number | undefined, spaceId: string): Promise<ISpaceOperationResult> {
+		const space = this.model.getSpace(spaceId);
+		if (!space) {
+			return { result: SpaceOperationResult.UnknownSpace };
+		}
+
+		const host = this.hosts.get(spaceId);
+		if (host) {
+			this.activate(spaceId);
+			host.close();
+		}
+
+		// If the Space lives under the configured root, remove its folder too.
+		const spacesRoot = this.configurationService.getValue<string>(SPACES_ROOT_SETTING);
+		if (spacesRoot && space.workspace?.kind === 'folder') {
+			const rootUri = URI.file(spacesRoot);
+			if (this.isUnderRoot(space.workspace.uri, rootUri)) {
+				try {
+					await this.fileService.del(space.workspace.uri, { recursive: true, useTrash: false });
+				} catch (error) {
+					this.logService.warn(`[spaces:view] failed to delete Space folder '${space.workspace.uri.fsPath}': ${error}`);
+				}
+			}
+		}
+
+		if (!host) {
+			// No host (e.g. a space restored from a root folder without a live
+			// view): remove straight from the model.
+			const removal = this.model.remove(spaceId);
+			if (removal?.nextActiveSpace && !this.lifecycleMainService.quitRequested) {
+				this.activate(removal.nextActiveSpace.id);
+			}
+		}
+
+		this.tabStore.set(spaceId, undefined);
+
+		return { result: SpaceOperationResult.Ok };
+	}
+
+	async sendToSpace(windowId: number | undefined, spaceId: string, channel: string, ...args: unknown[]): Promise<void> {
+		const host = this.hosts.get(spaceId);
+		if (host?.webContents && !host.webContents.isDestroyed()) {
+			host.send(channel, ...args);
+		}
 	}
 
 	async closeSpace(windowId: number | undefined, spaceId: string): Promise<ISpaceOperationResult> {
@@ -333,6 +442,19 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		for (const host of this.hosts.values()) {
 			host.setBounds(bounds);
 		}
+	}
+
+
+	private joinRootFolder(root: string, name: string): string {
+		const trimmed = name.trim();
+		const isWin = root.includes('\\') || /^[A-Za-z]:/.test(root);
+		const sep = isWin ? '\\' : '/';
+		return root.replace(/[\\/]+$/, '') + sep + trimmed;
+	}
+
+	private isUnderRoot(uri: URI, root: URI): boolean {
+		const rel = root.path.length === 1 ? uri.path : uri.path.slice(root.path.length + 1);
+		return uri.path.startsWith(root.path) && rel.length > 0 && !rel.includes('/');
 	}
 
 	private activate(spaceId: string): ISpaceOperationResult {

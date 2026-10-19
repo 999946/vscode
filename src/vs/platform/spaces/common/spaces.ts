@@ -8,6 +8,8 @@ import { basename, extname } from '../../../base/common/resources.js';
 import { URI, UriComponents } from '../../../base/common/uri.js';
 import { localize } from '../../../nls.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
+import { ISpacesSettings } from './spacesConfig.js';
+import { ISpaceTabState } from './spacesTabs.js';
 
 /**
  * Spaces group several fully independent workbench windows behind one
@@ -100,6 +102,36 @@ export interface ICommonSpacesService {
 
 	/** Marks the calling window's Space as needing attention if it is inactive. */
 	requestAttention(): Promise<void>;
+
+	/** Reads the user-facing Spaces settings that drive the shared sidebar. */
+	getSidebarSettings(): Promise<ISpacesSettings>;
+
+	/** Writes a single user-facing Spaces setting (e.g. `spacesRoot`). */
+	setSidebarSetting(key: string, value: unknown): Promise<void>;
+
+	/** Reads the persisted tab state of a Space (editors/terminals/preview). */
+	getSpaceTabs(spaceId: string): Promise<ISpaceTabState>;
+
+	/**
+	 * Persists the tab state of the calling Space reported by its workbench.
+	 * The main process resolves the Space from the calling window id.
+	 */
+	updateSpaceTabs(state: ISpaceTabState): Promise<void>;
+
+	/**
+	 * Reads the persisted tab state of the calling Space. The main process
+	 * resolves the Space from the calling window id.
+	 */
+	getPersistedTabStateForWindow(): Promise<ISpaceTabState>;
+
+	/** Creates a Space with the given name (under the configured spaces root if set). */
+	createSpace(name: string): Promise<ISpaceOperationResult>;
+
+	/** Closes and deletes a Space, removing its persisted tab state. */
+	deleteSpace(spaceId: string): Promise<ISpaceOperationResult>;
+
+	/** Sends an internal message to a Space's workbench renderer. */
+	sendToSpace(spaceId: string, channel: string, ...args: unknown[]): Promise<void>;
 }
 
 export const ISpacesService = createDecorator<ISpacesService>('spacesService');

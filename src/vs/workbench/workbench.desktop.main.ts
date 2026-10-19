@@ -163,6 +163,7 @@ import './contrib/userDataSync/electron-browser/userDataSync.contribution.js';
 import './contrib/tags/electron-browser/workspaceTagsService.js';
 import './contrib/tags/electron-browser/tags.contribution.js';
 import './contrib/spaces/electron-browser/spaces.contribution.js';
+import './contrib/spaces/electron-browser/spacesTabPersistence.js';
 // Performance
 import './contrib/performance/electron-browser/performance.contribution.js';
 

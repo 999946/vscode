@@ -11,6 +11,8 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
 import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { ISpaceOperationResult, ISpacesService, ISpacesSnapshot, SPACES_CHANNEL_NAME } from '../../../../platform/spaces/common/spaces.js';
+import { ISpacesSettings } from '../../../../platform/spaces/common/spacesConfig.js';
+import { ISpaceTabState } from '../../../../platform/spaces/common/spacesTabs.js';
 
 export class SpacesService implements ISpacesService {
 
@@ -45,6 +47,14 @@ export class SpacesService implements ISpacesService {
 	renameSpace(spaceId: string, name: string): Promise<ISpaceOperationResult> { return this.proxy.renameSpace(spaceId, name); }
 	revealCurrentSpace(): Promise<void> { return this.proxy.revealCurrentSpace(); }
 	requestAttention(): Promise<void> { return this.proxy.requestAttention(); }
+	getSidebarSettings(): Promise<ISpacesSettings> { return this.proxy.getSidebarSettings(); }
+	setSidebarSetting(key: string, value: unknown): Promise<void> { return this.proxy.setSidebarSetting(key, value); }
+	getSpaceTabs(spaceId: string): Promise<ISpaceTabState> { return this.proxy.getSpaceTabs(spaceId); }
+	updateSpaceTabs(state: ISpaceTabState): Promise<void> { return this.proxy.updateSpaceTabs(state); }
+	getPersistedTabStateForWindow(): Promise<ISpaceTabState> { return this.proxy.getPersistedTabStateForWindow(); }
+	createSpace(name: string): Promise<ISpaceOperationResult> { return this.proxy.createSpace(name); }
+	deleteSpace(spaceId: string): Promise<ISpaceOperationResult> { return this.proxy.deleteSpace(spaceId); }
+	sendToSpace(spaceId: string, channel: string, ...args: unknown[]): Promise<void> { return this.proxy.sendToSpace(spaceId, channel, ...args); }
 }
 
 registerSingleton(ISpacesService, SpacesService, InstantiationType.Delayed);

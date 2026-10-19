@@ -22,6 +22,7 @@ import { IInstantiationService } from '../../../../platform/instantiation/common
 import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { ISpace, ISpacesService, ISpacesSnapshot, SPACES_ENABLED_SETTING } from '../../../../platform/spaces/common/spaces.js';
+import { SPACES_ROOT_SETTING, SPACES_SHOW_INITIALS_SETTING, SPACES_SHOW_TABS_SETTING } from '../../../../platform/spaces/common/spacesConfig.js';
 import { workbenchConfigurationNodeBase } from '../../../common/configuration.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.js';
@@ -39,6 +40,20 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 			default: false,
 			tags: ['experimental'],
 			markdownDescription: localize('spaces.enabled', "Enables Spaces: several fully independent windows (own workspace, extension host, terminals and state) hosted behind one window frame. Switching Spaces keeps inactive Spaces running.")
+		},
+		[SPACES_ROOT_SETTING]: {
+			type: 'string',
+			markdownDescription: localize('spaces.root', "The root folder under which every first-level sub-folder becomes a Space. Space folders are created, renamed and deleted alongside the Spaces list.")
+		},
+		[SPACES_SHOW_TABS_SETTING]: {
+			type: 'boolean',
+			default: false,
+			markdownDescription: localize('spaces.showTabs', "Show each Space's tabs in the Spaces panel and switcher.")
+		},
+		[SPACES_SHOW_INITIALS_SETTING]: {
+			type: 'boolean',
+			default: false,
+			markdownDescription: localize('spaces.showInitials', "Use the Space name's first letter as its icon. When off, the icon is hidden entirely.")
 		}
 	}
 });
