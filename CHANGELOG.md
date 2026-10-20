@@ -23,7 +23,7 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 ---
 
-## [1.143.1] - 2026-10-20
+## [1.143.1] - 2026-10-19
 
 ### 新增
 - Spaces 侧栏完全对齐 Terax 交互：折叠/置顶/宽度调整、Space 列表展示逻辑与设置项一致。
@@ -34,7 +34,7 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 ---
 
-## [1.143.0] - 2026-10-15
+## [1.143.0] - 2026-10-13
 
 ### 新增
 - 实现 terax 风格自动更新：启动时检查 GitHub Releases，发现新版本自动下载，重启替换 `.app` 完成更新；支持菜单 **Help → Check for Updates...** 手动检查。
@@ -55,7 +55,7 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 ---
 
-## [0.1.0] - 2026-10-15
+## [0.1.0] - 2026-10-12
 
 ### 新增
 - 首个 macOS 双架构（x64 + arm64）发布流水线：ad-hoc 签名 + DMG 打包 + 自动附加到 GitHub Release。
