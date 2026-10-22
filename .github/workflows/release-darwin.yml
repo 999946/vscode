@@ -163,6 +163,23 @@ jobs:
             echo "tag=manual-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Verify package version
+        run: |
+          TAG="${{ steps.release-tag.outputs.tag }}"
+          # Only versioned tags (release-vX.Y.Z / vX.Y.Z) enforce the
+          # "manual version bump before tag" rule; auto-generated manual-* tags
+          # are created on-demand and do not carry a package version.
+          case "$TAG" in
+            release-v*|v*) VER="${TAG#release-v}"; VER="${VER#v}" ;;
+            *) echo "Skipping version check for non-versioned tag: $TAG"; exit 0 ;;
+          esac
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$PACKAGE_VERSION" != "$VER" ]; then
+            echo "package.json version ($PACKAGE_VERSION) does not match release version ($VER)."
+            echo "Update package.json and package-lock.json manually before creating the release tag."
+            exit 1
+          fi
+
       - name: Create DMG
         id: create-dmg
         run: |
