@@ -27,7 +27,7 @@ import { ISingleFolderWorkspaceIdentifier, IWorkspaceIdentifier } from '../../wo
  * `WebContentsView` attached to a shared frame `electron.BrowserWindow`, instead of a
  * full `electron.BrowserWindow` of its own.
  *
- * Every Space gets one of these hosts. `SpacesMainService` swaps the visible
+ * Every Space gets one of these hosts. `SpacesViewService` swaps the visible
  * view by adding/removing the view from the frame's `contentView`. Because
  * each `WebContentsView` owns an independent `WebContents`, the renderer gets
  * its own IPC context (`ipc.electron.ts` scopes `vscode:hello`/`vscode:message`

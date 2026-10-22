@@ -67,8 +67,8 @@ export interface ISpaceOperationResult {
 
 /**
  * Service surface shared by the main process implementation and the renderer
- * proxy. The main process variant receives the calling window id as first
- * argument (see `ISpacesMainService`).
+ * proxy. The main process variant resolves the calling Space from the calling
+ * window id (`WebContentsView.id`), passed as the first argument.
  */
 export interface ICommonSpacesService {
 

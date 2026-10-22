@@ -71,10 +71,10 @@ export class DefaultSpacesFrameProvider implements ISpacesFrameProvider {
  * - switching Spaces swaps which view is attached/visible in the frame, it
  *   never unloads or reloads a renderer
  *
- * `SpacesMainService` is the multi-window MVP presentation (show/hide
- * `BrowserWindow`s); this service is the view-based presentation. Both share
- * the same model (`SpacesModel`), service interface (`ICommonSpacesService`)
- * and UI; only the presentation differs.
+ * This is the only Spaces presentation: every Space is a
+ * `WebContentsViewWorkbenchHost` in the shared frame, there are no per-Space
+ * `BrowserWindow`s. All Spaces share one model (`SpacesModel`) and service
+ * interface (`ICommonSpacesService`).
  */
 export class SpacesViewService extends Disposable implements ISpacesViewService {
 
