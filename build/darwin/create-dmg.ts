@@ -9,6 +9,7 @@ import { spawn } from '@malept/cross-spawn-promise';
 
 const root = path.dirname(path.dirname(import.meta.dirname));
 const product = JSON.parse(fs.readFileSync(path.join(root, 'product.json'), 'utf8'));
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
 const DMGBUILD_REPO = 'https://github.com/dmgbuild/dmgbuild.git';
 const DMGBUILD_COMMIT = '75c8a6c7835c5b73dfd4510d92a8f357f93a5fbf';
@@ -139,7 +140,7 @@ async function runDmgBuild(settingsFile: string, volumeName: string, artifactPat
 	});
 }
 
-async function main(buildDir?: string, outDir?: string): Promise<void> {
+async function main(buildDir?: string, outDir?: string, versionArg?: string): Promise<void> {
 	const arch = process.env['VSCODE_ARCH'];
 	const quality = process.env['VSCODE_QUALITY'];
 	// OSS builds have no quality; fall back to the stable background art while
@@ -161,7 +162,8 @@ async function main(buildDir?: string, outDir?: string): Promise<void> {
 	const appRoot = path.join(buildDir, `ParaCode-darwin-${arch}`);
 	const appName = product.nameLong + '.app';
 	const appPath = path.join(appRoot, appName);
-	const dmgName = `ParaCode-darwin-${arch}`;
+	const version = versionArg ?? packageJson.version;
+	const dmgName = `ParaCode-darwin-${version}-${arch}`;
 	const artifactPath = path.join(outDir, `${dmgName}.dmg`);
 	const backgroundPath = path.join(import.meta.dirname, `dmg-background-${backgroundQuality}.tiff`);
 	const diskIconPath = path.join(root, 'resources', 'darwin', 'code.icns');
@@ -221,7 +223,7 @@ async function main(buildDir?: string, outDir?: string): Promise<void> {
 }
 
 if (import.meta.main) {
-	main(process.argv[2], process.argv[3]).catch(err => {
+	main(process.argv[2], process.argv[3], process.argv[4]).catch(err => {
 		console.error('Failed to create DMG:', err);
 		process.exit(1);
 	});

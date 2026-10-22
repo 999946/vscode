@@ -25,6 +25,8 @@ import { AbstractUpdateService, IUpdateURLOptions } from './abstractUpdateServic
 
 const GITHUB_RELEASES_URL = 'https://api.github.com/repos/999946/vscode/releases/latest';
 const UPDATE_DMG_ASSET_PREFIX = 'ParaCode-darwin-';
+/** Regex for a release DMG asset name: `ParaCode-darwin-<version>-<arch>.dmg` (version in the middle, since the arch is always the last segment before `.dmg`). */
+const UPDATE_DMG_ASSET_REGEX = /^ParaCode-darwin-.*-([^.]+)\.dmg$/;
 /** Sibling of the running app that holds the pre-swap bundle until the new version proves it can launch. */
 const BACKUP_APP_SUFFIX = '.old';
 /** How long a backup bundle must be left untouched before it is considered stale and removable. */
@@ -143,7 +145,7 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 
 		const remoteVersion = release?.tag_name;
 		const archName = process.arch === 'x64' ? 'x64' : 'arm64';
-		const asset = release?.assets.find(candidate => candidate.name === `${UPDATE_DMG_ASSET_PREFIX}${archName}.dmg`);
+		const asset = release?.assets.find(candidate => candidate.name.startsWith(UPDATE_DMG_ASSET_PREFIX) && UPDATE_DMG_ASSET_REGEX.test(candidate.name) && candidate.name.endsWith(`-${archName}.dmg`));
 		if (!remoteVersion || !asset || !isNewerVersion(remoteVersion, this.productService.version)) {
 			this.setState(State.Idle(UpdateType.Archive, undefined, explicit || undefined));
 			return;
@@ -246,7 +248,15 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 			fs.renameSync(currentApp, backupApp);
 			// eslint-disable-next-line local/code-no-sync-fs -- The synchronous quit-and-install hook must swap the bundle before app.exit(); it cannot await, because the process is about to terminate.
 			fs.renameSync(this.downloadedAppPath, currentApp);
-			spawnDetached('open', [currentApp]);
+
+			// Open the replaced bundle AFTER the old process has fully exited.
+			// Launching right now (before `app.exit(0)`) would reach LaunchServices
+			// while the old instance (same bundle id) is still alive, which routes
+			// the request to the exiting process and never opens the new version.
+			// A detached shell that waits for this process id to disappear gives
+			// the old instance time to quit, then `open` starts the new bundle.
+			// Wait at most ~5s for the old process to exit, then open the new bundle.
+			spawnDetached('/bin/sh', ['-c', `i=0; while kill -0 ${process.pid} 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; open ${JSON.stringify(currentApp)}`]);
 			electron.app.exit(0);
 		} catch (error) {
 			this.logService.error('update#quitAndInstall - failed to replace the application bundle', error);

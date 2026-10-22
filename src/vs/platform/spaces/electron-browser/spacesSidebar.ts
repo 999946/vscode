@@ -262,7 +262,16 @@ function render(): void {
 	if (data.spaces.length === 0) {
 		const empty = document.createElement('div');
 		empty.className = 'empty';
-		empty.textContent = 'No Spaces yet. Create one to get started.';
+
+		if (settings.spacesRoot) {
+			empty.textContent = 'No Spaces yet. Create one to get started.';
+			appendButton(empty, 'Create a Space', () => showNewSpaceDialog());
+		} else {
+			empty.textContent = 'No Spaces yet. Set your Spaces root folder to get started.';
+			appendButton(empty, 'Configure Spaces Root…', () => {
+				void window.spacesSidebar.invoke('openSettings');
+			});
+		}
 		list.appendChild(empty);
 		return;
 	}
@@ -285,6 +294,14 @@ function render(): void {
 	}
 
 	renderChrome();
+}
+
+function appendButton(container: HTMLElement, label: string, onClick: () => void): void {
+	const btn = document.createElement('button');
+	btn.className = 'empty-action';
+	btn.textContent = label;
+	btn.addEventListener('click', onClick);
+	container.appendChild(btn);
 }
 
 function insertTabsAfterRow(spaceId: string, container: HTMLElement): void {

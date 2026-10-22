@@ -37,7 +37,7 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 	properties: {
 		[SPACES_ENABLED_SETTING]: {
 			type: 'boolean',
-			default: false,
+			default: true,
 			tags: ['experimental'],
 			markdownDescription: localize('spaces.enabled', "Enables Spaces: several fully independent windows (own workspace, extension host, terminals and state) hosted behind one window frame. Switching Spaces keeps inactive Spaces running.")
 		},

@@ -5,21 +5,15 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 发布新版本前，**必须先在顶部添加对应版本的 section**，否则 workflow 会失败。
 
-## 安装说明
+## [1.143.3] - 2026-10-22
 
-1. M 系列 Mac 选择 **Apple Silicon** dmg，Intel Mac 选择 **Intel** dmg。
-2. 双击 dmg 把 `Code - OSS.app` 拖入 Applications。
-3. ad-hoc 签名会被 Gatekeeper 拦截，在系统设置里允许一次即可：
+### 新增
+- Spaces 改为默认开启（`workbench.experimental.spaces.enabled` 默认值设为 `true`）。
+- Spaces 列表为空时显示空状态引导：未配置 `spaces.root` 时提供「Configure Spaces Root…」按钮直达设置；已配置时提供「Create a Space」按钮。
 
-   - 右键（或按住 Control 点）`Code - OSS.app` → **打开** → 在弹窗里点 **打开**；
-     或
-   - 打开 **系统设置 → 隐私与安全性**，看到「已阻止 Code - OSS」时点 **仍要打开**。
-
-   之后即可正常启动，无需每次操作。
-
-自动更新：
-- 应用启动后会自动检查 GitHub Releases，发现新版本即自动下载，并在重启时替换 `.app` 完成更新，无需重新下载 dmg。
-- 也可随时通过菜单 **Help → Check for Updates...** 手动检查；有新版时菜单会变为 **Restart to Update**（适用于已下载更新后）。
+### 修复
+- 在线更新安装后自动重新打开应用：等待旧进程完全退出再启动新版本，避免 LaunchServices 把打开请求路由到正在退出的旧实例（之前更新完成后不会自动打开）。
+- 发布产物文件名带版本号：`ParaCode-darwin-<版本>-<架构>.dmg`；GitHub Release 备注不再附带安装说明，仅保留对应版本的更新日志。
 
 ---
 

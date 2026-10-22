@@ -148,31 +148,10 @@ jobs:
       - name: Verify code signature
         run: codesign --verify --deep --strict '../ParaCode-darwin-${{ env.VSCODE_ARCH }}/ParaCode.app'
 
-      - name: Create DMG
-        run: |
-          mkdir -p out
-          # create-dmg.ts joins its buildDir arg with `ParaCode-darwin-${VSCODE_ARCH}`
-          # (build/darwin/create-dmg.ts:161). The gulp packaging task writes the
-          # .app under the repo's PARENT directory (buildRoot = dirname(repo)),
-          # so the arg is `..`, not the arch-specific path.
-          node build/darwin/create-dmg.ts '..' "$(pwd)/out"
-
-      # The DMG's volume icon is set via badge_icon in dmg-settings.py; this
-      # pass replaces the volume icon itself inside the DMG if the first one
-      # did not take (idempotent, just overwrites the same .VolumeIcon.icns).
-      - name: Patch DMG volume icon
-        run: python3 build/darwin/patch-dmg.py out/ParaCode-darwin-${{ env.VSCODE_ARCH }}.dmg resources/darwin/code.icns
-
-      - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ParaCode-darwin-${{ env.VSCODE_ARCH }}
-          path: out/ParaCode-darwin-${{ env.VSCODE_ARCH }}.dmg
-          if-no-files-found: error
-
-      # Resolve the release tag once per job. On a tag push GITHUB_REF_NAME is
-      # already the bare tag; on manual dispatch we build one from the input, or
-      # fall back to a timestamp tag when the input is blank.
+      # Resolve the release tag before packaging so the DMG artifact can be
+      # named with the release version. On a tag push GITHUB_REF_NAME is already
+      # the bare tag; on manual dispatch we build one from the input, or fall
+      # back to a timestamp tag when the input is blank.
       - name: Determine release tag
         id: release-tag
         run: |
@@ -184,6 +163,33 @@ jobs:
             echo "tag=manual-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Create DMG
+        id: create-dmg
+        run: |
+          mkdir -p out
+          # Derive the changelog version key from the tag, e.g. release-v1.2.3 -> 1.2.3.
+          VER="${{ steps.release-tag.outputs.tag }}"
+          VER="${VER#release-v}"
+          # create-dmg.ts joins its buildDir arg with `ParaCode-darwin-${VSCODE_ARCH}`
+          # (build/darwin/create-dmg.ts:161). The gulp packaging task writes the
+          # .app under the repo's PARENT directory (buildRoot = dirname(repo)),
+          # so the arg is `..`, not the arch-specific path.
+          node build/darwin/create-dmg.ts '..' "$(pwd)/out" "$VER"
+          echo "dmg-name=ParaCode-darwin-$VER-${{ env.VSCODE_ARCH }}.dmg" >> "$GITHUB_OUTPUT"
+
+      # The DMG's volume icon is set via badge_icon in dmg-settings.py; this
+      # pass replaces the volume icon itself inside the DMG if the first one
+      # did not take (idempotent, just overwrites the same .VolumeIcon.icns).
+      - name: Patch DMG volume icon
+        run: python3 build/darwin/patch-dmg.py out/${{ steps.create-dmg.outputs.dmg-name }} resources/darwin/code.icns
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ParaCode-darwin-${{ env.VSCODE_ARCH }}
+          path: out/${{ steps.create-dmg.outputs.dmg-name }}
+          if-no-files-found: error
+
       # Each matrix job uploads its own arch DMG to the SAME release/tag.
       # Both jobs race on the first `gh release create`; the loser falls back
       # to `--clobber` upload, which appends the asset on top of the release
@@ -191,7 +197,7 @@ jobs:
       - name: Attach to GitHub Release
         run: |
           TAG="${{ steps.release-tag.outputs.tag }}"
-          DMG="out/ParaCode-darwin-${{ env.VSCODE_ARCH }}.dmg"
+          DMG="out/${{ steps.create-dmg.outputs.dmg-name }}"
 
           # Derive the changelog version key from the tag, e.g. release-v1.2.3 -> 1.2.3.
           VER="${TAG#release-v}"
@@ -211,12 +217,7 @@ jobs:
           # Avoid a duplicated separator when the version section ends with '---'.
           body = re.sub(r'^---+\s*$', '', body, flags=re.M).strip()
 
-          # Append the fixed install/update instructions section.
-          m_install = re.search(r'^## 安装说明\s*(.*?)(?=^## |\Z)', text, re.M | re.S)
-          install = m_install.group(1).strip() if m_install else ''
           sys.stdout.write(body)
-          if install:
-              sys.stdout.write('\n\n---\n\n## 安装说明\n\n' + install)
           PYEOF_SCRIPT
 
           gh release create "$TAG" "$DMG" \
