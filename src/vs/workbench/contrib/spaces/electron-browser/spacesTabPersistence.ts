@@ -8,7 +8,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { basename, dirname } from '../../../../base/common/resources.js';
 import { ITerminalService } from '../../terminal/browser/terminal.js';
 import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
-import { ISpacesService } from '../../../../platform/spaces/common/spaces.js';
+import { ISpacesService, SPACES_NEW_TAB_CHANNEL, SPACES_CLOSE_TAB_CHANNEL } from '../../../../platform/spaces/common/spaces.js';
 import { ISerializedSpaceTab, ISpaceTabState } from '../../../../platform/spaces/common/spacesTabs.js';
 import { IWorkbenchContribution, WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -18,7 +18,7 @@ import { getActiveWindow } from '../../../../base/browser/dom.js';
 /**
  * Reports this Space's live tabs (editors + terminals) to the main process for
  * persistence, restores persisted tabs on startup, and handles sidebar tab
- * actions (`spaces:newTab` / `spaces:closeTab`).
+ * actions (`vscode:spaces:newTab` / `vscode:spaces:closeTab`).
  *
  * Mirrors Terax `useSpacePersistence`:
  * - debounced (3 s) writes of the tab list + active tab index
@@ -60,12 +60,12 @@ class SpacesTabPersistenceContribution extends Disposable implements IWorkbenchC
 
 		// Sidebar tab actions routed to this Space's renderer by the main process.
 		const newTabListener = () => { void this.newTab(); };
-		ipcRenderer.on('spaces:newTab', newTabListener);
-		this.store.add(toDisposable(() => ipcRenderer.removeListener('spaces:newTab', newTabListener)));
+		ipcRenderer.on(SPACES_NEW_TAB_CHANNEL, newTabListener);
+		this.store.add(toDisposable(() => ipcRenderer.removeListener(SPACES_NEW_TAB_CHANNEL, newTabListener)));
 
 		const closeTabListener = (_event: unknown, tabId: unknown) => { void this.closeTab(String(tabId)); };
-		ipcRenderer.on('spaces:closeTab', closeTabListener);
-		this.store.add(toDisposable(() => ipcRenderer.removeListener('spaces:closeTab', closeTabListener)));
+		ipcRenderer.on(SPACES_CLOSE_TAB_CHANNEL, closeTabListener);
+		this.store.add(toDisposable(() => ipcRenderer.removeListener(SPACES_CLOSE_TAB_CHANNEL, closeTabListener)));
 	}
 
 	private scheduleReport(): void {

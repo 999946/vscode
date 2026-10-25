@@ -12,7 +12,7 @@ import { URI } from '../../../base/common/uri.js';
 import { IDialogMainService } from '../../dialogs/electron-main/dialogMainService.js';
 import { ILogService } from '../../log/common/log.js';
 import { IThemeMainService } from '../../theme/electron-main/themeMainService.js';
-import { SpaceOperationResult, ISpaceWorkspace } from '../common/spaces.js';
+import { SpaceOperationResult, ISpaceWorkspace, SPACES_NEW_TAB_CHANNEL, SPACES_CLOSE_TAB_CHANNEL } from '../common/spaces.js';
 import { ISpacesSettings } from '../common/spacesConfig.js';
 import { ISpacesSidebarData, ISpacesSidebarRpcRequest, ISpacesSidebarSpace, ISpacesSidebarTab, SpacesSidebarRpcMethod, SPACES_SIDEBAR_CHANGED_CHANNEL, SPACES_SIDEBAR_CHANNEL } from '../common/spacesSidebarRpc.js';
 import type { ISerializedSpaceTab } from '../common/spacesTabs.js';
@@ -121,11 +121,11 @@ export class SpacesSidebarHost extends Disposable {
 				await this.commandService.executeCommand('workbench.action.openSettings', 'spaces');
 				return undefined;
 			case 'newTabInSpace':
-				await this.spacesViewService.sendToSpace(undefined, args[0] as string, 'spaces:newTab');
+				await this.spacesViewService.sendToSpace(undefined, args[0] as string, SPACES_NEW_TAB_CHANNEL);
 				return undefined;
 			case 'closeTab': {
 				const [spaceId, tabId] = args as [string, string];
-				await this.spacesViewService.sendToSpace(undefined, spaceId, 'spaces:closeTab', tabId);
+				await this.spacesViewService.sendToSpace(undefined, spaceId, SPACES_CLOSE_TAB_CHANNEL, tabId);
 				return undefined;
 			}
 			case 'openFolderAsSpace': {

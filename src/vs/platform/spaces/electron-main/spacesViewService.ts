@@ -163,33 +163,21 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		}
 
 		const workspace = currentWindow.openedWorkspace;
-
-		// The calling window is a regular `CodeWindow`; in the view-based
-		// presentation we recreate it as a `WebContentsViewWorkbenchHost` inside
-		// the frame (a `WebContentsView` cannot adopt a `BrowserWindow`'s
-		// renderer). The original window is closed to leave exactly one frame.
-		const creation = await this.createHostAsSpace(workspace);
-		if (creation.result !== SpaceOperationResult.Ok) {
-			return creation;
-		}
-
-		currentWindow.close();
-
-		return creation;
+		return this.createHostAndAdopt(windowId, workspace);
 	}
 
 	async createEmptySpace(windowId: number | undefined): Promise<ISpaceOperationResult> {
-		return this.createHostAsSpace(undefined);
+		return this.createHostAndAdopt(windowId, undefined);
 	}
 
 	async openFolderAsSpace(windowId: number | undefined, folderUri: UriComponents): Promise<ISpaceOperationResult> {
 		const uri = URI.revive(folderUri);
-		return this.createHostAsSpace({ id: uri.fsPath, uri });
+		return this.createHostAndAdopt(windowId, { id: uri.fsPath, uri });
 	}
 
 	async openWorkspaceAsSpace(windowId: number | undefined, workspaceUri: UriComponents): Promise<ISpaceOperationResult> {
 		const uri = URI.revive(workspaceUri);
-		return this.createHostAsSpace({ id: uri.fsPath, uri });
+		return this.createHostAndAdopt(windowId, { id: uri.fsPath, uri });
 	}
 
 	async switchToSpace(windowId: number | undefined, spaceId: string): Promise<ISpaceOperationResult> {
@@ -207,9 +195,36 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 				this.logService.warn(`[spaces:view] failed to create Space folder '${folderUri.fsPath}': ${error}`);
 				return { result: SpaceOperationResult.OpenFailed };
 			}
-			return this.createHostAsSpace({ id: folderUri.fsPath, uri: folderUri });
+			return this.createHostAndAdopt(windowId, { id: folderUri.fsPath, uri: folderUri });
 		}
-		return this.createHostAsSpace(undefined);
+		return this.createHostAndAdopt(windowId, undefined);
+	}
+
+	/**
+	 * Creates a new Space host inside the shared frame and, when the calling
+	 * window is a regular `CodeWindow` that has not been adopted into the frame
+	 * yet, closes it through the regular lifecycle so that only a single frame
+	 * window remains. A vetoed close (e.g. unsaved changes) leaves the calling
+	 * window alive while the new Space keeps running in the frame.
+	 *
+	 * Frame-internal callers (the sidebar RPC passes `undefined`, and a Space
+	 * host's id is its `WebContentsView.id`, which never resolves through
+	 * `getWindowById`) have no matching `CodeWindow` and are left untouched.
+	 */
+	private async createHostAndAdopt(windowId: number | undefined, workspace: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier | undefined): Promise<ISpaceOperationResult> {
+		const creation = await this.createHostAsSpace(workspace);
+		if (creation.result !== SpaceOperationResult.Ok) {
+			return creation;
+		}
+
+		const callingWindow = typeof windowId === 'number' ? this.windowsMainService.getWindowById(windowId) : undefined;
+		if (callingWindow) {
+			// The calling window is a regular `CodeWindow`; close it through the
+			// standard lifecycle so unsaved changes can veto the adoption.
+			callingWindow.close();
+		}
+
+		return creation;
 	}
 
 	async deleteSpace(windowId: number | undefined, spaceId: string): Promise<ISpaceOperationResult> {

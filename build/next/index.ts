@@ -25,7 +25,7 @@ import { copyFile, mapWithConcurrency, MAX_CONCURRENT_FILE_OPERATIONS, transpile
 import { copyResources } from './resources.ts';
 import { optimizeSvgFiles } from './svg.ts';
 import { getBundleOptions } from './bundle.ts';
-import { compileStandaloneFiles } from './standalone.ts';
+import { compileBrowserScriptFiles, compileStandaloneFiles } from './standalone.ts';
 
 const globAsync = promisify(glob);
 
@@ -693,6 +693,7 @@ async function bundle(outDir: string, doMinify: boolean, doNls: boolean, doMangl
 
 	// Compile standalone TypeScript files (like Electron preload scripts) that cannot be bundled
 	await compileStandaloneFiles(path.join(REPO_ROOT, SRC_DIR), outDirPath, target, doMinify, sourceMapBaseUrl);
+	await compileBrowserScriptFiles(path.join(REPO_ROOT, SRC_DIR), outDirPath, target, doMinify, sourceMapBaseUrl);
 
 	if (allEntryPoints.includes(sessionsWebEntryPoint)) {
 		await bundleDevTunnelsWeb({

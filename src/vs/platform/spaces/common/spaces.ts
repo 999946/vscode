@@ -22,6 +22,15 @@ export const SPACES_ENABLED_SETTING = 'workbench.experimental.spaces.enabled';
 
 export const SPACES_CHANNEL_NAME = 'spaces';
 
+/**
+ * Channels used by the Spaces tab persistence contribution. They must start
+ * with the `vscode:` prefix so the sandboxed `ipcRenderer` wrapper (see
+ * `preload.ts` -> `validateIPC`) allows them; the preload rejects any channel
+ * that does not start with `vscode:`.
+ */
+export const SPACES_NEW_TAB_CHANNEL = 'vscode:spaces:newTab';
+export const SPACES_CLOSE_TAB_CHANNEL = 'vscode:spaces:closeTab';
+
 export type SpaceState = 'active' | 'inactive';
 
 export interface ISpaceWorkspace {

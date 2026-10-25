@@ -11,6 +11,8 @@ import { StringDecoder } from 'string_decoder';
 import { timeout } from '../../../base/common/async.js';
 import { FileAccess } from '../../../base/common/network.js';
 import { IWindowsMainService } from '../../windows/electron-main/windows.js';
+import { IWorkbenchHostRegistry } from '../../window/electron-main/workbenchHostRegistry.js';
+import type { IWorkbenchHost } from '../../window/electron-main/workbenchHost.js';
 import Severity from '../../../base/common/severity.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { ILifecycleMainService } from '../../lifecycle/electron-main/lifecycleMainService.js';
@@ -467,6 +469,7 @@ export class WindowUtilityProcess extends UtilityProcess {
 	constructor(
 		@ILogService logService: ILogService,
 		@IWindowsMainService private readonly windowsMainService: IWindowsMainService,
+		@IWorkbenchHostRegistry private readonly workbenchHostRegistry: IWorkbenchHostRegistry,
 		@ITelemetryService telemetryService: ITelemetryService,
 		@ILifecycleMainService lifecycleMainService: ILifecycleMainService
 	) {
@@ -474,13 +477,31 @@ export class WindowUtilityProcess extends UtilityProcess {
 	}
 
 	override start(configuration: IWindowUtilityProcessConfiguration): boolean {
+		// First try a regular `CodeWindow` (the original path). The window the
+		// renderer lives in must exist and be usable to route the extension host
+		// message port back to it.
 		const responseWindow = this.windowsMainService.getWindowById(configuration.responseWindowId);
-		if (!responseWindow?.win || responseWindow.win.isDestroyed() || responseWindow.win.webContents.isDestroyed()) {
+		if (responseWindow?.win && !responseWindow.win.isDestroyed() && !responseWindow.win.webContents.isDestroyed()) {
+			return this.doStartForWindow(responseWindow.win, configuration);
+		}
+
+		// A Space renderer runs inside a `WebContentsView` attached to a shared
+		// frame (see `WebContentsViewWorkbenchHost`). Its `windowId` is the
+		// `WebContents.id`, which is not a `BrowserWindow.id` and therefore not
+		// resolvable through `windowsMainService`. Fall back to the host
+		// registry so the extension host can still be started for a Space.
+		const host = this.workbenchHostRegistry.getHostById(configuration.responseWindowId);
+		const hostContents = host?.webContents;
+		if (!hostContents || hostContents.isDestroyed()) {
 			this.log('Refusing to start utility process because requesting window cannot be found or is destroyed...', Severity.Error);
 
 			return true;
 		}
 
+		return this.doStartForHost(host!, hostContents, configuration);
+	}
+
+	private doStartForWindow(window: BrowserWindow, configuration: IWindowUtilityProcessConfiguration): boolean {
 		// Start utility process
 		const started = super.doStart(configuration);
 		if (!started) {
@@ -488,11 +509,36 @@ export class WindowUtilityProcess extends UtilityProcess {
 		}
 
 		// Register to window events
-		this.registerWindowListeners(responseWindow.win, configuration);
+		this.registerWindowListeners(window, configuration);
 
 		// Establish & exchange message ports
 		const windowPort = this.connect(configuration.payload);
-		responseWindow.win.webContents.postMessage(configuration.responseChannel, configuration.responseNonce, [windowPort]);
+		window.webContents.postMessage(configuration.responseChannel, configuration.responseNonce, [windowPort]);
+
+		return true;
+	}
+
+	private doStartForHost(host: IWorkbenchHost, hostContents: Electron.WebContents, configuration: IWindowUtilityProcessConfiguration): boolean {
+		// Start utility process
+		const started = super.doStart(configuration);
+		if (!started) {
+			return false;
+		}
+
+		// Bind the utility process lifecycle to the host renderer. Unlike a
+		// `CodeWindow` there is no `BrowserWindow` to listen on, so we use the
+		// host's own close event instead.
+		if (configuration.windowLifecycleBound) {
+			const graceTime = configuration.windowLifecycleGraceTime;
+			const terminate = graceTime && graceTime > 0
+				? () => this.waitForExit(graceTime)
+				: () => this.kill();
+			this._register(Event.filter(host.onDidClose, () => true)(terminate));
+		}
+
+		// Establish & exchange message ports
+		const windowPort = this.connect(configuration.payload);
+		hostContents.postMessage(configuration.responseChannel, configuration.responseNonce, [windowPort]);
 
 		return true;
 	}

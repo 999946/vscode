@@ -13,7 +13,7 @@ import { IWorkbenchHost } from '../../../window/electron-main/workbenchHost.js';
 import { IWindowsMainService } from '../../../windows/electron-main/windows.js';
 import { ISingleFolderWorkspaceIdentifier, IWorkspaceIdentifier } from '../../../workspace/common/workspace.js';
 import { ILoadEvent, LoadReason } from '../../../window/electron-main/window.js';
-import { ISpace, ISpacesSnapshot, SpaceOperationResult } from '../../common/spaces.js';
+import { ISpace, ISpacesSnapshot, SpaceOperationResult, SPACES_NEW_TAB_CHANNEL } from '../../common/spaces.js';
 import { ISpacesFrameProvider, SpacesViewService } from '../../electron-main/spacesViewService.js';
 import { IConfigurationService } from '../../../configuration/common/configuration.js';
 import { IFileService } from '../../../files/common/files.js';
@@ -378,9 +378,9 @@ suite('SpacesViewService', () => {
 			messages.push({ channel, args });
 		};
 
-		await service.sendToSpace(undefined, spaceA.id, 'spaces:newTab');
+		await service.sendToSpace(undefined, spaceA.id, SPACES_NEW_TAB_CHANNEL);
 		assert.strictEqual(messages.length, 1);
-		assert.strictEqual(messages[0].channel, 'spaces:newTab');
+		assert.strictEqual(messages[0].channel, SPACES_NEW_TAB_CHANNEL);
 	});
 
 	test('createSpace creates a folder under the configured spaces root', async () => {
