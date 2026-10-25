@@ -5,6 +5,16 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 发布新版本前，**必须先在顶部添加对应版本的 section**，否则 workflow 会失败。
 
+## [1.143.5] - 2026-10-25
+
+### 修复
+- 修复在 frame 内创建/打开 Space 时出现第二个原生窗口：此前 `createEmptySpace` / `openFolderAsSpace` / `openWorkspaceAsSpace` / `createSpace` 创建 Space 后不关闭原普通窗口，导致两个窗口并存。现统一为「收编当前窗口，只留一个 frame」——创建 Space 成功后走标准 close 流程关闭原窗口（未保存更改可取消收编）。
+- 修复安装版 `out/vs/platform/spaces/**` 资源缺失导致新建 Space 页面黑屏、侧栏不显示：`build/next` 补打包 `spacesSidebar.html`、`spacesSidebarPreload.ts`，新增 `compileBrowserScriptFiles()` 编译 `spacesSidebar.ts` -> `spacesSidebar.js`。
+- 修复侧栏新建/关闭 tab 失败：`spaces:newTab` / `spaces:closeTab` 非法 IPC 频道改为 `vscode:` 前缀（`vscode:spaces:newTab` / `vscode:spaces:closeTab`），主进程 `sendToSpace` 与渲染层监听同步。
+- 修复 frame 内扩展宿主无法启动：`WindowUtilityProcess.start` 对 WebContentsView host 的 `windowId`（= `WebContentsView.webContents.id`，非 BrowserWindow id）回退 `workbenchHostRegistry` 解析。
+
+---
+
 ## [1.143.4] - 2026-10-22
 
 ### 修复
