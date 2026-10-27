@@ -5,6 +5,16 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 发布新版本前，**必须先在顶部添加对应版本的 section**，否则 workflow 会失败。
 
+## [1.143.6] - 2026-10-27
+
+### 修复
+- 修复新建/打开 Space 后 frame 窗口黑屏（无内容、无侧栏）：这是两个依赖注入装配错误所致——
+  1. `WebContentsViewWorkbenchHost` 的构造参数缺失 `@inject` 装饰器，主进程 DI 把 `IProtocolMainService` 等 5 个依赖全解析成 `undefined`，host 加载直接崩溃（日志：`Cannot read properties of undefined (reading 'createIPCObjectUrl')`）。已补全装饰器。
+  2. `SpacesSidebarHost` 注入了主进程不存在的 `ICommandService`（该服务是 workbench 层），侧栏创建失败（日志：`[createInstance] depends on UNKNOWN service commandService`）。已移除该依赖，"Configure Spaces Root" 改为经 `vscode:spaces:openSettings` 路由到活跃 Space 的 workbench renderer 执行。
+- 由此，"New Empty Space / Open Folder as New Space / Create Space" 后 frame 应显示正常侧栏与工作区内容（此前仅收编了窗口数量，frame 内容仍黑）。
+
+---
+
 ## [1.143.5] - 2026-10-25
 
 ### 修复
