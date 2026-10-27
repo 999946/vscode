@@ -30,6 +30,7 @@ export const SPACES_CHANNEL_NAME = 'spaces';
  */
 export const SPACES_NEW_TAB_CHANNEL = 'vscode:spaces:newTab';
 export const SPACES_CLOSE_TAB_CHANNEL = 'vscode:spaces:closeTab';
+export const SPACES_OPEN_SETTINGS_CHANNEL = 'vscode:spaces:openSettings';
 
 export type SpaceState = 'active' | 'inactive';
 

@@ -12,11 +12,10 @@ import { URI } from '../../../base/common/uri.js';
 import { IDialogMainService } from '../../dialogs/electron-main/dialogMainService.js';
 import { ILogService } from '../../log/common/log.js';
 import { IThemeMainService } from '../../theme/electron-main/themeMainService.js';
-import { SpaceOperationResult, ISpaceWorkspace, SPACES_NEW_TAB_CHANNEL, SPACES_CLOSE_TAB_CHANNEL } from '../common/spaces.js';
+import { SpaceOperationResult, ISpaceWorkspace, SPACES_NEW_TAB_CHANNEL, SPACES_CLOSE_TAB_CHANNEL, SPACES_OPEN_SETTINGS_CHANNEL } from '../common/spaces.js';
 import { ISpacesSettings } from '../common/spacesConfig.js';
 import { ISpacesSidebarData, ISpacesSidebarRpcRequest, ISpacesSidebarSpace, ISpacesSidebarTab, SpacesSidebarRpcMethod, SPACES_SIDEBAR_CHANGED_CHANNEL, SPACES_SIDEBAR_CHANNEL } from '../common/spacesSidebarRpc.js';
 import type { ISerializedSpaceTab } from '../common/spacesTabs.js';
-import { ICommandService } from '../../commands/common/commands.js';
 import type { ISpacesViewService } from './spacesViewService.js';
 
 /** Default width of the shared Spaces sidebar in the frame window. */
@@ -42,7 +41,6 @@ export class SpacesSidebarHost extends Disposable {
 		private readonly spacesViewService: Omit<ISpacesViewService, '_serviceBrand'>,
 		@IThemeMainService private readonly themeMainService: IThemeMainService,
 		@IDialogMainService private readonly dialogMainService: IDialogMainService,
-		@ICommandService private readonly commandService: ICommandService,
 		@ILogService private readonly logService: ILogService
 	) {
 		super();
@@ -117,9 +115,17 @@ export class SpacesSidebarHost extends Disposable {
 				const state = await this.spacesViewService.getSpaceTabs(undefined, args[0] as string);
 				return { tabs: state.tabs.map((t, i) => toSidebarTab(t, i === state.activeTabIndex)) };
 			}
-			case 'openSettings':
-				await this.commandService.executeCommand('workbench.action.openSettings', 'spaces');
+			case 'openSettings': {
+				// The main process has no workbench command service. Open the
+				// settings UI in the active Space's workbench renderer instead
+				// (it runs `workbench.action.openSettings` with the Spaces filter).
+				const snapshot = await this.spacesViewService.getSpaces(undefined);
+				const activeId = snapshot.activeSpaceId;
+				if (activeId) {
+					await this.spacesViewService.sendToSpace(undefined, activeId, SPACES_OPEN_SETTINGS_CHANNEL);
+				}
 				return undefined;
+			}
 			case 'newTabInSpace':
 				await this.spacesViewService.sendToSpace(undefined, args[0] as string, SPACES_NEW_TAB_CHANNEL);
 				return undefined;

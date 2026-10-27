@@ -119,11 +119,11 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 	}
 
 	constructor(
-		private readonly environmentMainService: IEnvironmentMainService,
-		private readonly protocolMainService: IProtocolMainService,
-		private readonly themeMainService: IThemeMainService,
-		private readonly workbenchHostRegistry: IWorkbenchHostRegistry,
-		private readonly logService: ILogService
+		@IEnvironmentMainService private readonly environmentMainService: IEnvironmentMainService,
+		@IProtocolMainService private readonly protocolMainService: IProtocolMainService,
+		@IThemeMainService private readonly themeMainService: IThemeMainService,
+		@IWorkbenchHostRegistry private readonly workbenchHostRegistry: IWorkbenchHostRegistry,
+		@ILogService private readonly logService: ILogService
 	) {
 		super();
 

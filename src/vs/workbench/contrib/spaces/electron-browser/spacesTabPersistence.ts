@@ -8,10 +8,11 @@ import { URI } from '../../../../base/common/uri.js';
 import { basename, dirname } from '../../../../base/common/resources.js';
 import { ITerminalService } from '../../terminal/browser/terminal.js';
 import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
-import { ISpacesService, SPACES_NEW_TAB_CHANNEL, SPACES_CLOSE_TAB_CHANNEL } from '../../../../platform/spaces/common/spaces.js';
+import { ISpacesService, SPACES_NEW_TAB_CHANNEL, SPACES_CLOSE_TAB_CHANNEL, SPACES_OPEN_SETTINGS_CHANNEL } from '../../../../platform/spaces/common/spaces.js';
 import { ISerializedSpaceTab, ISpaceTabState } from '../../../../platform/spaces/common/spacesTabs.js';
 import { IWorkbenchContribution, WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ipcRenderer } from '../../../../base/parts/sandbox/electron-browser/globals.js';
 import { getActiveWindow } from '../../../../base/browser/dom.js';
 
@@ -41,6 +42,7 @@ class SpacesTabPersistenceContribution extends Disposable implements IWorkbenchC
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
 		@ITerminalService private readonly terminalService: ITerminalService,
 		@ISpacesService private readonly spacesService: ISpacesService,
+		@ICommandService private readonly commandService: ICommandService,
 		@ILogService private readonly logService: ILogService
 	) {
 		super();
@@ -66,6 +68,12 @@ class SpacesTabPersistenceContribution extends Disposable implements IWorkbenchC
 		const closeTabListener = (_event: unknown, tabId: unknown) => { void this.closeTab(String(tabId)); };
 		ipcRenderer.on(SPACES_CLOSE_TAB_CHANNEL, closeTabListener);
 		this.store.add(toDisposable(() => ipcRenderer.removeListener(SPACES_CLOSE_TAB_CHANNEL, closeTabListener)));
+
+		// Sidebar "Configure Spaces Root" routed to this Space's renderer by the
+		// main process (the main process has no workbench command service).
+		const openSettingsListener = () => { void this.openSettings(); };
+		ipcRenderer.on(SPACES_OPEN_SETTINGS_CHANNEL, openSettingsListener);
+		this.store.add(toDisposable(() => ipcRenderer.removeListener(SPACES_OPEN_SETTINGS_CHANNEL, openSettingsListener)));
 	}
 
 	private scheduleReport(): void {
@@ -124,6 +132,10 @@ class SpacesTabPersistenceContribution extends Disposable implements IWorkbenchC
 		}
 		const state: ISpaceTabState = { tabs, activeTabIndex: Math.max(0, activeTabIndex) };
 		await this.spacesService.updateSpaceTabs(state);
+	}
+
+	private openSettings(): void {
+		void this.commandService.executeCommand('workbench.action.openSettings', 'spaces');
 	}
 
 	private async restore(): Promise<void> {
