@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import * as electron from 'electron';
 import * as fs from 'fs';
 import { CancellationToken, CancellationTokenSource } from '../../../base/common/cancellation.js';
@@ -80,6 +80,40 @@ function runCommand(executable: string, args: string[]): Promise<string> {
 function spawnDetached(executable: string, args: string[]): void {
 	const child = spawn(executable, args, { detached: true, stdio: 'ignore' });
 	child.unref();
+}
+
+function removeRecursively(target: string): Promise<void> {
+	return (async () => {
+		try {
+			await fs.promises.rm(target, { recursive: true, force: true });
+			return;
+		} catch (error) {
+			// Fall through to the system rm for stubborn framework trees.
+		}
+		try {
+			await runCommand('/bin/rm', ['-rf', target]);
+		} catch (error) {
+			// The caller decides how to handle cleanup failure.
+		}
+	})();
+}
+
+function removeSyncRecursively(target: string): void {
+	try {
+		// eslint-disable-next-line local/code-no-sync-fs -- This hook must finish before app.exit().
+		fs.rmSync(target, { recursive: true, force: true });
+		return;
+	} catch (error) {
+		// Fall through to the system rm.
+	}
+	try {
+		const result = spawnSync('/bin/rm', ['-rf', target]);
+		if (result.error) {
+			throw result.error;
+		}
+	} catch (error) {
+		// The caller decides how to handle cleanup failure.
+	}
 }
 
 export class DarwinUpdateService extends AbstractUpdateService implements IRelaunchHandler {
@@ -190,11 +224,13 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 
 	/**
 	 * Mounts the downloaded DMG read-only and copies the contained `.app` into
-	 * the running application's installation folder under a `.update` sibling
-	 * name. Staging on the same volume means the swap at restart is a plain
-	 * rename — no root privileges, no Gatekeeper prompt (the file was fetched
-	 * by the app itself, so it carries no quarantine attribute), and the
-	 * running bundle is never mutated while in use.
+	 * the running application's installation folder under a unique `.update-*`
+	 * sibling name. Staging on the same volume means the swap at restart is a
+	 * plain rename — no root privileges, no Gatekeeper prompt (the file was
+	 * fetched by the app itself, so it carries no quarantine attribute), and
+	 * the running bundle is never mutated while in use. The unique suffix
+	 * avoids collisions with stale staging directories left by interrupted
+	 * updates.
 	 */
 	private async stageAppFromDmg(updateDmgPath: string): Promise<string> {
 		const mountPoint = await this.attachDmg(updateDmgPath);
@@ -205,8 +241,9 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 			const appName = `${this.productService.nameLong}.app`;
 			const sourceApp = path.join(mountPoint, appName);
 			const currentApp = this.getCurrentAppPath();
-			const stagedApp = path.join(path.dirname(currentApp), `.${appName}.update`);
-			await fs.promises.rm(stagedApp, { recursive: true, force: true });
+			// Use a unique sibling so a stale partial stage cannot block a later update.
+			const stagedApp = path.join(path.dirname(currentApp), `.${appName}.update-${Date.now()}`);
+			await removeRecursively(stagedApp);
 			await runCommand('ditto', [sourceApp, stagedApp]);
 			return stagedApp;
 		} finally {
@@ -243,35 +280,54 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 		}
 		const currentApp = this.getCurrentAppPath();
 		const backupApp = `${currentApp}${BACKUP_APP_SUFFIX}`;
+		const waitAndOpen = (appToOpen: string) => spawnDetached('/bin/sh', ['-c', `i=0; while kill -0 ${process.pid} 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; open ${JSON.stringify(appToOpen)}`]);
 		try {
-			// eslint-disable-next-line local/code-no-sync-fs -- The synchronous quit-and-install hook must swap the bundle before app.exit(); it cannot await, because the process is about to terminate.
+			// A stale non-empty backup makes renameSync fail with ENOTEMPTY.
+			// eslint-disable-next-line local/code-no-sync-fs -- This hook must inspect the sibling before app.exit().
+			if (fs.existsSync(backupApp)) {
+				removeSyncRecursively(backupApp);
+			}
+
+			// Swap the running bundle for the staged one.
+			// eslint-disable-next-line local/code-no-sync-fs -- This hook must complete the swap before app.exit().
 			fs.renameSync(currentApp, backupApp);
-			// eslint-disable-next-line local/code-no-sync-fs -- The synchronous quit-and-install hook must swap the bundle before app.exit(); it cannot await, because the process is about to terminate.
+			// eslint-disable-next-line local/code-no-sync-fs -- This hook must complete the swap before app.exit().
 			fs.renameSync(this.downloadedAppPath, currentApp);
 
-			// Open the replaced bundle AFTER the old process has fully exited.
-			// Launching right now (before `app.exit(0)`) would reach LaunchServices
-			// while the old instance (same bundle id) is still alive, which routes
-			// the request to the exiting process and never opens the new version.
-			// A detached shell that waits for this process id to disappear gives
-			// the old instance time to quit, then `open` starts the new bundle.
-			// Wait at most ~5s for the old process to exit, then open the new bundle.
-			spawnDetached('/bin/sh', ['-c', `i=0; while kill -0 ${process.pid} 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; open ${JSON.stringify(currentApp)}`]);
+			// Launch only after this process has exited; otherwise LaunchServices
+			// may route the request back to the old instance.
+			waitAndOpen(currentApp);
 			electron.app.exit(0);
 		} catch (error) {
 			this.logService.error('update#quitAndInstall - failed to replace the application bundle', error);
 			try {
-				// eslint-disable-next-line local/code-no-sync-fs -- The synchronous quit-and-install hook must swap the bundle before app.exit(); it cannot await, because the process is about to terminate.
+				// Restore the old bundle if the first rename succeeded but the
+				// second rename failed.
+				// eslint-disable-next-line local/code-no-sync-fs -- This hook must restore the bundle before app.exit().
 				if (fs.existsSync(backupApp) && !fs.existsSync(currentApp)) {
-					// eslint-disable-next-line local/code-no-sync-fs -- The synchronous quit-and-install hook must swap the bundle before app.exit(); it cannot await, because the process is about to terminate.
+					// eslint-disable-next-line local/code-no-sync-fs -- This hook must restore the bundle before app.exit().
 					fs.renameSync(backupApp, currentApp);
+				}
+				// eslint-disable-next-line local/code-no-sync-fs -- This hook must inspect the staged bundle before app.exit().
+				const stagedExists = fs.existsSync(this.downloadedAppPath) && !fs.existsSync(currentApp);
+				if (stagedExists) {
+					// eslint-disable-next-line local/code-no-sync-fs -- This hook must restore the bundle before app.exit().
+					fs.renameSync(this.downloadedAppPath, currentApp);
 				}
 			} catch (restoreError) {
 				this.logService.error('update#quitAndInstall - failed to restore the application bundle', restoreError);
 			}
+
+			// Always exit the stuck Restarting process and reopen whichever
+			// bundle still exists, rather than leaving the user stranded.
+			// eslint-disable-next-line local/code-no-sync-fs -- This hook must choose a recovery bundle before app.exit().
+			const recoverApp = fs.existsSync(currentApp) ? currentApp : (fs.existsSync(backupApp) ? backupApp : undefined);
+			if (recoverApp) {
+				waitAndOpen(recoverApp);
+			}
+			electron.app.exit(0);
 		}
 	}
-
 	/**
 	 * Removes the previous version's bundle once the new app has been running
 	 * long enough that a crash-loop is unlikely. Kept as the `.old` sibling in
@@ -292,7 +348,7 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 				}
 				return;
 			}
-			await fs.promises.rm(backupApp, { recursive: true, force: true });
+			await removeRecursively(backupApp);
 			this.logService.info('update#cleanupStaleBackup - removed the previous application version backup');
 		} catch (error) {
 			this.logService.warn('update#cleanupStaleBackup - failed to remove the previous application version backup', error);
@@ -315,7 +371,7 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 		this.downloadCancellation?.dispose();
 		this.downloadCancellation = undefined;
 		if (this.downloadedAppPath) {
-			await fs.promises.rm(this.downloadedAppPath, { recursive: true, force: true });
+			await removeRecursively(this.downloadedAppPath);
 		}
 		this.downloadedAppPath = undefined;
 	}
