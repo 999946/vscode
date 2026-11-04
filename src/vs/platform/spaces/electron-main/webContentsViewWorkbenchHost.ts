@@ -86,6 +86,7 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 	private whenReadyCallbacks: { (): void }[] = [];
 
 	setReady(): void {
+		this.logService.trace(`[spaces:view] host ${this.id} reported ready`);
 		this.loadTimeoutScheduler.cancel();
 		this.removeStartupStalledOverlay();
 		this.readyState = 'ready';
@@ -347,20 +348,29 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 
 		const lastError = this.rendererErrors.length ? this.rendererErrors[this.rendererErrors.length - 1] : undefined;
 		const errorBlock = lastError
-			? `<div style="color:#f48771;line-height:1.5;margin-top:12px;word-break:break-word;">${escape(lastError)}</div>`
-			: '';
+			? `(() => { const d = document.createElement('div'); d.style.cssText = 'color:#f48771;line-height:1.5;margin-top:12px;word-break:break-word;'; d.textContent = ${JSON.stringify(lastError)}; return d; })()`
+			: 'null';
 
+		// Build the overlay with DOM APIs (no `innerHTML`): the workbench document
+		// enforces Trusted Types, so assigning HTML strings here throws.
 		const script = `(() => {
 			if (document.getElementById('paracode-space-stalled')) { return; }
 			const overlay = document.createElement('div');
 			overlay.id = 'paracode-space-stalled';
 			overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.88);color:#cccccc;font-family:-apple-system,system-ui,sans-serif;';
-			overlay.innerHTML = '<div style="max-width:520px;padding:24px;text-align:center;">'
-				+ '<div style="font-size:18px;font-weight:600;margin-bottom:8px;">Space is taking too long to start</div>'
-				+ '<div style="color:#969696;line-height:1.5;">The workbench has not finished loading. DevTools has been opened - check the console for errors.</div>'
-				+ '<div style="color:#969696;line-height:1.5;margin-top:8px;">If this keeps happening, reloading the Space or restarting ParaCode may help.</div>'
-				+ ${JSON.stringify(errorBlock)}
-				+ '</div>';
+			const box = document.createElement('div');
+			box.style.cssText = 'max-width:520px;padding:24px;text-align:center;';
+			const title = document.createElement('div');
+			title.style.cssText = 'font-size:18px;font-weight:600;margin-bottom:8px;';
+			title.textContent = 'Space is taking too long to start';
+			const hint = document.createElement('div');
+			hint.style.cssText = 'color:#969696;line-height:1.5;';
+			hint.textContent = 'The workbench has not finished loading. DevTools has been opened - check the console for errors.';
+			box.appendChild(title);
+			box.appendChild(hint);
+			const lastError = ${errorBlock};
+			if (lastError) { box.appendChild(lastError); }
+			overlay.appendChild(box);
 			document.body.appendChild(overlay);
 		})();`;
 
@@ -457,7 +467,10 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 }
 
 /** How long to wait for the workbench renderer to report ready before showing a startup hint. */
-const LOAD_TIMEOUT = 20000;
+// Dev-mode cold starts (extension host + agent host + remote calls) can easily
+// exceed 20s on slower machines, and a false "stalled" overlay is worse than
+// waiting a bit longer. The overlay still surfaces a genuinely stuck boot.
+const LOAD_TIMEOUT = 45000;
 
 /** Escape a value for use inside a double-quoted HTML attribute. */
 function escapeAttribute(value: string): string {

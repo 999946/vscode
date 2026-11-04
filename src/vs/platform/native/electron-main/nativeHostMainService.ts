@@ -1151,7 +1151,9 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 		if (window) {
 			window.setReady();
 		} else {
-			this.workbenchHostRegistry.getHostById(windowId!)?.setReady();
+			const host = this.workbenchHostRegistry.getHostById(windowId!);
+			this.logService.trace(`[spaces:view] notifyReady windowId=${windowId} host=${host ? 'found' : 'missing'}`);
+			host?.setReady();
 		}
 	}
 

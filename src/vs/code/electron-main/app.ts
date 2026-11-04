@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { app, BrowserWindow, desktopCapturer, globalShortcut, powerMonitor, protocol, screen as electronScreen, session, Session, systemPreferences, WebFrameMain } from 'electron';
+import { app, BrowserWindow, desktopCapturer, globalShortcut, powerMonitor, protocol, screen as electronScreen, session, Session, systemPreferences, WebContentsView, WebFrameMain } from 'electron';
 import { addUNCHostToAllowlist, disableUNCAccessRestrictions } from '../../base/node/unc.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
 import { hostname, release } from 'os';
@@ -383,7 +383,49 @@ export class CodeApplication extends Disposable {
 		};
 
 		const isSvgRequestFromSafeContext = (details: Electron.OnBeforeRequestListenerDetails | Electron.OnHeadersReceivedListenerDetails): boolean => {
-			return details.resourceType === 'xhr' || isSafeFrame(details.frame);
+			if (details.resourceType === 'xhr' || isSafeFrame(details.frame)) {
+				return true;
+			}
+
+			// `vscode-file://` is not in `supportedSvgSchemes`, so without this SVG
+			// icons inside a Space `WebContentsView` would be cancelled.
+			const frame = details.frame;
+			return !!frame && !frame.isDestroyed() && isRequestFromSpaceView(details, frame);
+		};
+
+		// Spaces render each workbench *and* the shared sidebar in
+		// `WebContentsView`s attached to a shared frame window. Those views are not
+		// `BrowserWindow`s, so they never show up in `getAllWindowsExcludingOffscreen()`
+		// and their `vscode-file://` requests would be blocked with
+		// `ERR_BLOCKED_BY_CLIENT`, leaving the Space black. `hostWebContents` is null
+		// for a `WebContentsView`, so walk the `contentView` tree of every real
+		// window and match the requesting `WebContents` against the child views.
+		const isRequestFromSpaceView = (details: Electron.OnBeforeRequestListenerDetails | Electron.OnHeadersReceivedListenerDetails, frame: WebFrameMain): boolean => {
+			const pending: Electron.View[] = [];
+			for (const window of BrowserWindow.getAllWindows()) {
+				if (window.isDestroyed() || window.webContents.isOffscreen()) {
+					continue;
+				}
+				pending.push(...window.contentView.children);
+			}
+
+			while (pending.length > 0) {
+				const view = pending.pop();
+				if (!view) {
+					continue;
+				}
+				if (view instanceof WebContentsView && !view.webContents.isDestroyed()) {
+					// Match the requesting `WebContents` directly when Electron exposes it
+					// and fall back to its renderer process so that subresources (images,
+					// fonts, ...) are covered as well.
+					if (details.webContents?.id === view.webContents.id || frame.processId === view.webContents.mainFrame.processId) {
+						return true;
+					}
+				}
+				pending.push(...view.children);
+			}
+
+			return false;
 		};
 
 		const isAllowedVsCodeFileRequest = (details: Electron.OnBeforeRequestListenerDetails) => {
@@ -400,7 +442,7 @@ export class CodeApplication extends Disposable {
 				}
 			}
 
-			return false;
+			return isRequestFromSpaceView(details, frame);
 		};
 
 		const isAllowedWebviewRequest = (uri: URI, details: Electron.OnBeforeRequestListenerDetails): boolean => {
