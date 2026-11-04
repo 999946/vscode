@@ -5,6 +5,17 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 发布新版本前，**必须先在顶部添加对应版本的 section**，否则 workflow 会失败。
 
+## [1.143.9] - 2026-11-05
+
+### 修复
+- 修复新建 Space 后窗口一片漆黑、主区与左侧列表都不显示的问题。根因是主进程对 `vscode-file://` 请求的白名单只认真正的 `BrowserWindow` 主框架，而 Space 的 workbench 与 sidebar 都运行在 `WebContentsView` 里，导致 `workbench.html` 与 `spacesSidebar.html` 的请求全部被取消（`ERR_BLOCKED_BY_CLIENT`）。
+  - 现在会遍历每个真实窗口的 `contentView` 子视图树，识别其中的 `WebContentsView` 并放行其请求；子资源（图片、字体等）通过渲染进程 id 一并匹配。
+  - 来自 Space 视图的 SVG 请求同样被视为安全来源，图标不再丢失。
+- 修复启动超时提示层无法显示的问题：workbench 文档启用了 Trusted Types，原先用 `innerHTML` 注入会抛异常，现在改用 DOM API 构建。
+- 启动超时判定从 20 秒放宽到 45 秒。开发模式冷启动（扩展宿主、Agent 宿主、远程调用叠加）常常超过 20 秒，会对健康启动的 Space 误报「启动过慢」。
+
+---
+
 ## [1.143.8] - 2026-11-04
 
 ### 修复
