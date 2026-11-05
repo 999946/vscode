@@ -5,6 +5,14 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 发布新版本前，**必须先在顶部添加对应版本的 section**，否则 workflow 会失败。
 
+## [1.143.13] - 2026-11-06
+
+### 修复
+- 加密可用性探测与加解密调用增加 5 秒超时兜底：即使异步 `safeStorage` 的 Promise 因 Keychain 永不响应而一直不完成，`isEncryptionAvailable()` 也会按「不可用」返回（密钥存储降级为内存），不再让 `SecretStorageService` 初始化无限期挂起。
+- 超时的错误会写入主进程日志，便于定位 Keychain / SecurityAgent 问题。
+
+---
+
 ## [1.143.12] - 2026-11-05
 
 ### 修复

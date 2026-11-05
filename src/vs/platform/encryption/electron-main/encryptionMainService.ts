@@ -7,6 +7,7 @@ import { safeStorage as safeStorageElectron, app } from 'electron';
 import { isMacintosh, isWindows } from '../../../base/common/platform.js';
 import { KnownStorageProvider, IEncryptionMainService, PasswordStoreCLIOption } from '../common/encryptionService.js';
 import { ILogService } from '../../log/common/log.js';
+import { withSafeStorageTimeout } from '../common/safeStorageTimeout.js';
 
 // These APIs are currently only supported in our custom build of electron so
 // we need to guard against them not being available.
@@ -88,13 +89,14 @@ export class EncryptionMainService implements IEncryptionMainService {
 		this.logService.trace('[EncryptionMainService] Checking if encryption is available...');
 		try {
 			const result = supportsAsyncSafeStorage
-				? await safeStorage.isAsyncEncryptionAvailable!()
+				? await withSafeStorageTimeout(safeStorage.isAsyncEncryptionAvailable!(), 'safeStorage.isAsyncEncryptionAvailable')
 				: safeStorage.isEncryptionAvailable();
 			this.logService.trace('[EncryptionMainService] Encryption is available: ', result);
 			return result;
 		} catch (e) {
 			// Never leave the caller waiting on a wedged keychain: treat the
-			// failure as "not available" so secret storage degrades to memory.
+			// failure as "not available" so secret storage degrades to memory
+			// instead of blocking workbench startup.
 			this.logService.error('[EncryptionMainService] Failed to check encryption availability', e);
 			return false;
 		}
@@ -140,7 +142,7 @@ export class EncryptionMainService implements IEncryptionMainService {
 
 	private async doEncrypt(value: string): Promise<Buffer> {
 		if (supportsAsyncSafeStorage) {
-			return safeStorage.encryptStringAsync!(value);
+			return withSafeStorageTimeout(safeStorage.encryptStringAsync!(value), 'safeStorage.encryptStringAsync');
 		}
 		return safeStorage.encryptString(value);
 	}
@@ -150,7 +152,7 @@ export class EncryptionMainService implements IEncryptionMainService {
 			return safeStorage.decryptString(encrypted);
 		}
 
-		const first = await safeStorage.decryptStringAsync!(encrypted);
+		const first = await withSafeStorageTimeout(safeStorage.decryptStringAsync!(encrypted), 'safeStorage.decryptStringAsync');
 		if (!first.shouldReEncrypt) {
 			return first.result;
 		}
@@ -158,7 +160,7 @@ export class EncryptionMainService implements IEncryptionMainService {
 		// The key was rotated or a stronger one became available: ask once more
 		// so the caller gets the value decrypted with the new key.
 		this.logService.trace('[EncryptionMainService] Decrypted value should be re-encrypted, retrying');
-		const second = await safeStorage.decryptStringAsync!(encrypted);
+		const second = await withSafeStorageTimeout(safeStorage.decryptStringAsync!(encrypted), 'safeStorage.decryptStringAsync');
 		return second.result ?? first.result;
 	}
 }
