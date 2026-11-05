@@ -21,9 +21,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version for manual dispatch (e.g. 0.2.0 → tag v0.2.0); defaults to an auto-generated timestamp tag'
+        description: 'Release version for manual dispatch (e.g. 1.143.13 → tag release-v1.143.13); defaults to an auto-generated timestamp tag'
         required: false
         default: ''
+      arch:
+        description: 'Which architecture(s) to build. Standard macOS runners are often capacity constrained, so a single arch can be retried on its own.'
+        type: choice
+        options:
+          - both
+          - x64
+          - arm64
+        default: both
 
 permissions:
   contents: write
@@ -37,8 +45,11 @@ jobs:
     runs-on: macos-latest
     strategy:
       fail-fast: false
+      # A manual dispatch may narrow the matrix to one arch; tag pushes always
+      # build both. Splitting the arches lets a single job be re-run when the
+      # macOS runner pool is short on capacity (queue timeouts cancel both jobs).
       matrix:
-        arch: [x64, arm64]
+        arch: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.arch == 'x64' && fromJSON('["x64"]') || github.event_name == 'workflow_dispatch' && github.event.inputs.arch == 'arm64' && fromJSON('["arm64"]') || fromJSON('["x64","arm64"]') }}
     env:
       VSCODE_ARCH: ${{ matrix.arch }}
       # x64 cross-builds from the arm64 runner need npm to resolve the
@@ -156,7 +167,9 @@ jobs:
         id: release-tag
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "tag=v${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+            # Keep the same `release-v` tag prefix as tag pushes so the updater's
+            # release lookup and asset URL construction stay identical.
+            echo "tag=release-v${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
           elif [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
           else
