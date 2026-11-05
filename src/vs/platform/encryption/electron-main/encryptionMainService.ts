@@ -146,13 +146,19 @@ export class EncryptionMainService implements IEncryptionMainService {
 	}
 
 	private async doDecrypt(encrypted: Buffer): Promise<string> {
-		if (supportsAsyncSafeStorage) {
-			const { shouldReEncrypt, result } = await safeStorage.decryptStringAsync!(encrypted);
-			if (shouldReEncrypt) {
-				this.logService.trace('[EncryptionMainService] Decrypted value should be re-encrypted');
-			}
-			return result;
+		if (!supportsAsyncSafeStorage) {
+			return safeStorage.decryptString(encrypted);
 		}
-		return safeStorage.decryptString(encrypted);
+
+		const first = await safeStorage.decryptStringAsync!(encrypted);
+		if (!first.shouldReEncrypt) {
+			return first.result;
+		}
+
+		// The key was rotated or a stronger one became available: ask once more
+		// so the caller gets the value decrypted with the new key.
+		this.logService.trace('[EncryptionMainService] Decrypted value should be re-encrypted, retrying');
+		const second = await safeStorage.decryptStringAsync!(encrypted);
+		return second.result ?? first.result;
 	}
 }
