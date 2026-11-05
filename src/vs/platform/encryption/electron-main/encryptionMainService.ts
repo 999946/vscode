@@ -13,9 +13,29 @@ import { ILogService } from '../../log/common/log.js';
 interface ISafeStorageAdditionalAPIs {
 	setUsePlainTextEncryption(usePlainText: boolean): void;
 	getSelectedStorageBackend(): string;
+
+	// Async variants only exist in our custom Electron build.
+	isAsyncEncryptionAvailable?(): Promise<boolean>;
+	encryptStringAsync?(plainText: string): Promise<Buffer>;
+	decryptStringAsync?(encrypted: Buffer): Promise<{ shouldReEncrypt: boolean; result: string }>;
 }
 
 const safeStorage: typeof import('electron').safeStorage & Partial<ISafeStorageAdditionalAPIs> = safeStorageElectron;
+
+/**
+ * Every Keychain call on macOS is synchronous and, when `securityd` /
+ * SecurityAgent is wedged, it blocks the main thread forever. That used to
+ * freeze the entire application during startup (encryption availability is
+ * probed before any workbench loads), so every window - including a freshly
+ * created Space - stayed black with no way to report an error.
+ *
+ * Our custom Electron build exposes async safeStorage APIs which perform the
+ * Keychain access off the main thread, keeping the main process responsive
+ * even if the keychain never answers. Prefer them when present.
+ */
+const supportsAsyncSafeStorage = typeof safeStorage.isAsyncEncryptionAvailable === 'function'
+	&& typeof safeStorage.encryptStringAsync === 'function'
+	&& typeof safeStorage.decryptStringAsync === 'function';
 
 export class EncryptionMainService implements IEncryptionMainService {
 	_serviceBrand: undefined;
@@ -29,12 +49,14 @@ export class EncryptionMainService implements IEncryptionMainService {
 			safeStorage.setUsePlainTextEncryption?.(true);
 			this.logService.trace('[EncryptionMainService] set usePlainTextEncryption to true');
 		}
+
+		this.logService.trace(`[EncryptionMainService] async safeStorage: ${supportsAsyncSafeStorage}`);
 	}
 
 	async encrypt(value: string): Promise<string> {
 		this.logService.trace('[EncryptionMainService] Encrypting value...');
 		try {
-			const result = JSON.stringify(safeStorage.encryptString(value));
+			const result = JSON.stringify(await this.doEncrypt(value));
 			this.logService.trace('[EncryptionMainService] Encrypted value.');
 			return result;
 		} catch (e) {
@@ -53,7 +75,7 @@ export class EncryptionMainService implements IEncryptionMainService {
 			const bufferToDecrypt = Buffer.from(parsedValue.data);
 
 			this.logService.trace('[EncryptionMainService] Decrypting value...');
-			const result = safeStorage.decryptString(bufferToDecrypt);
+			const result = await this.doDecrypt(bufferToDecrypt);
 			this.logService.trace('[EncryptionMainService] Decrypted value.');
 			return result;
 		} catch (e) {
@@ -62,11 +84,20 @@ export class EncryptionMainService implements IEncryptionMainService {
 		}
 	}
 
-	isEncryptionAvailable(): Promise<boolean> {
+	async isEncryptionAvailable(): Promise<boolean> {
 		this.logService.trace('[EncryptionMainService] Checking if encryption is available...');
-		const result = safeStorage.isEncryptionAvailable();
-		this.logService.trace('[EncryptionMainService] Encryption is available: ', result);
-		return Promise.resolve(result);
+		try {
+			const result = supportsAsyncSafeStorage
+				? await safeStorage.isAsyncEncryptionAvailable!()
+				: safeStorage.isEncryptionAvailable();
+			this.logService.trace('[EncryptionMainService] Encryption is available: ', result);
+			return result;
+		} catch (e) {
+			// Never leave the caller waiting on a wedged keychain: treat the
+			// failure as "not available" so secret storage degrades to memory.
+			this.logService.error('[EncryptionMainService] Failed to check encryption availability', e);
+			return false;
+		}
 	}
 
 	getKeyStorageProvider(): Promise<KnownStorageProvider> {
@@ -105,5 +136,23 @@ export class EncryptionMainService implements IEncryptionMainService {
 		this.logService.trace('[EncryptionMainService] Setting usePlainTextEncryption to true...');
 		safeStorage.setUsePlainTextEncryption(true);
 		this.logService.trace('[EncryptionMainService] Set usePlainTextEncryption to true');
+	}
+
+	private async doEncrypt(value: string): Promise<Buffer> {
+		if (supportsAsyncSafeStorage) {
+			return safeStorage.encryptStringAsync!(value);
+		}
+		return safeStorage.encryptString(value);
+	}
+
+	private async doDecrypt(encrypted: Buffer): Promise<string> {
+		if (supportsAsyncSafeStorage) {
+			const { shouldReEncrypt, result } = await safeStorage.decryptStringAsync!(encrypted);
+			if (shouldReEncrypt) {
+				this.logService.trace('[EncryptionMainService] Decrypted value should be re-encrypted');
+			}
+			return result;
+		}
+		return safeStorage.decryptString(encrypted);
 	}
 }
