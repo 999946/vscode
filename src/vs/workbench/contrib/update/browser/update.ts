@@ -272,9 +272,13 @@ export class UpdateContribution extends Disposable implements IWorkbenchContribu
 
 		switch (state.type) {
 			case StateType.Idle:
-				// Themed dialog shown from the last focused window; the windowless macOS case is handled by the main process.
-				if (state.notAvailable && !state.error && await this.hostService.hadLastFocus()) {
-					this.dialogService.info(nls.localize('noUpdatesAvailable', "There are currently no updates available."));
+				// Themed dialogs shown from the last focused window; the windowless macOS case is handled by the main process.
+				if (await this.hostService.hadLastFocus()) {
+					if (state.error) {
+						this.dialogService.error(nls.localize('updateCheckFailed.title', "Update check failed"), state.error);
+					} else if (state.notAvailable) {
+						this.dialogService.info(nls.localize('noUpdatesAvailable', "There are currently no updates available."));
+					}
 				}
 				break;
 

@@ -17,16 +17,22 @@ import { IRelaunchHandler, IRelaunchOptions, ILifecycleMainService } from '../..
 import { ILogService } from '../../log/common/log.js';
 import { IMeteredConnectionService } from '../../meteredConnection/common/meteredConnection.js';
 import { IProductService } from '../../product/common/productService.js';
-import { asJson, IRequestService } from '../../request/common/request.js';
+import { asJson, asText, IRequestService } from '../../request/common/request.js';
 import { IApplicationStorageMainService } from '../../storage/electron-main/storageMainService.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { AvailableForDownload, IUpdate, State, StateType, UpdateType } from '../common/update.js';
 import { AbstractUpdateService, IUpdateURLOptions } from './abstractUpdateService.js';
 
-const GITHUB_RELEASES_URL = 'https://api.github.com/repos/999946/vscode/releases/latest';
+const GITHUB_REPOSITORY = '999946/vscode';
+const GITHUB_RELEASES_URL = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest`;
+/**
+ * Unauthenticated GitHub API calls are rate limited per egress IP (60/hour), which
+ * makes the updater fail with `Server returned 403` on shared/NAT networks. The
+ * releases Atom feed is not subject to that quota, so it is used as a fallback for
+ * discovering the newest release tag.
+ */
+const GITHUB_RELEASES_ATOM_URL = `https://github.com/${GITHUB_REPOSITORY}/releases.atom`;
 const UPDATE_DMG_ASSET_PREFIX = 'ParaCode-darwin-';
-/** Regex for a release DMG asset name: `ParaCode-darwin-<version>-<arch>.dmg` (version in the middle, since the arch is always the last segment before `.dmg`). */
-const UPDATE_DMG_ASSET_REGEX = /^ParaCode-darwin-.*-([^.]+)\.dmg$/;
 /** Sibling of the running app that holds the pre-swap bundle until the new version proves it can launch. */
 const BACKUP_APP_SUFFIX = '.old';
 /** How long a backup bundle must be left untouched before it is considered stale and removable. */
@@ -35,6 +41,67 @@ const STALE_BACKUP_THRESHOLD_MS = 60 * 1000;
 interface IGitHubRelease {
 	readonly tag_name: string;
 	readonly assets: readonly { readonly name: string; readonly browser_download_url: string }[];
+}
+
+/**
+ * Turns a release tag into the DMG asset download URL served by GitHub. Unlike the
+ * API-provided `browser_download_url` this needs no API request, so it works even
+ * when the Atom fallback had to be used.
+ */
+function releaseAssetUrl(tagName: string, archName: string): string {
+	return `https://github.com/${GITHUB_REPOSITORY}/releases/download/${tagName}/${UPDATE_DMG_ASSET_PREFIX}${tagName.replace(/^release-v/, '').replace(/^v/, '')}-${archName}.dmg`;
+}
+
+/** Extracts the newest release tag from a GitHub releases Atom feed. */
+function parseLatestTagFromAtom(feed: string): string | undefined {
+	const entry = /<entry>[\s\S]*?<\/entry>/.exec(feed);
+	if (!entry) {
+		return undefined;
+	}
+	const tag = /releases\/tag\/([^"']+)/.exec(entry[0]);
+	if (!tag) {
+		return undefined;
+	}
+	return decodeURIComponent(tag[1]);
+}
+
+/**
+ * Resolves the newest release tag, preferring the GitHub API but falling back to the
+ * Atom feed when the API is unavailable (rate limited, blocked or given any non-JSON
+ * payload). Returns `undefined` only when both sources fail.
+ */
+async function resolveLatestReleaseTag(requestService: IRequestService, logService: ILogService, token: CancellationToken): Promise<string | undefined> {
+	try {
+		const context = await requestService.request({
+			url: GITHUB_RELEASES_URL,
+			headers: { Accept: 'application/vnd.github+json' },
+			callSite: 'updateService.darwin.githubRelease'
+		}, token);
+		const release = await asJson<IGitHubRelease>(context);
+		if (release?.tag_name) {
+			return release.tag_name;
+		}
+		logService.warn('update#resolveLatestReleaseTag - GitHub API returned no tag, falling back to the releases feed');
+	} catch (error) {
+		logService.warn('update#resolveLatestReleaseTag - GitHub API unavailable, falling back to the releases feed', error);
+	}
+
+	try {
+		const context = await requestService.request({
+			url: GITHUB_RELEASES_ATOM_URL,
+			headers: { Accept: 'application/atom+xml' },
+			callSite: 'updateService.darwin.githubReleaseAtom'
+		}, token);
+		const feed = await asText(context);
+		const tag = feed ? parseLatestTagFromAtom(feed) : undefined;
+		if (!tag) {
+			logService.warn('update#resolveLatestReleaseTag - releases feed did not contain a release tag');
+		}
+		return tag;
+	} catch (error) {
+		logService.error('update#resolveLatestReleaseTag - failed to read the releases feed', error);
+		return undefined;
+	}
 }
 
 function parseVersion(version: string): number[] {
@@ -160,33 +227,23 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 	}
 
 	private async checkGitHubRelease(explicit: boolean): Promise<void> {
-		let release: IGitHubRelease | null = null;
-		try {
-			const context = await this.requestService.request({
-				url: GITHUB_RELEASES_URL,
-				headers: { Accept: 'application/vnd.github+json' },
-				callSite: 'updateService.darwin.githubRelease'
-			}, CancellationToken.None);
-			release = await asJson<IGitHubRelease>(context);
-		} catch (error) {
-			this.logService.error('update#checkGitHubRelease - failed to check for updates', error);
+		const remoteVersion = await resolveLatestReleaseTag(this.requestService, this.logService, CancellationToken.None);
+		if (!remoteVersion) {
 			if (this.state.type === StateType.CheckingForUpdates) {
 				// Surface the failure only on explicit checks; automatic checks stay quiet.
-				this.setState(State.Idle(UpdateType.Archive, getErrorMessage(error)));
+				this.setState(State.Idle(UpdateType.Archive, explicit ? 'Could not reach GitHub to look for updates. Check your network or proxy and try again.' : undefined));
 			}
 			return;
 		}
 
-		const remoteVersion = release?.tag_name;
-		const archName = process.arch === 'x64' ? 'x64' : 'arm64';
-		const asset = release?.assets.find(candidate => candidate.name.startsWith(UPDATE_DMG_ASSET_PREFIX) && UPDATE_DMG_ASSET_REGEX.test(candidate.name) && candidate.name.endsWith(`-${archName}.dmg`));
-		if (!remoteVersion || !asset || !isNewerVersion(remoteVersion, this.productService.version)) {
+		if (!isNewerVersion(remoteVersion, this.productService.version)) {
 			this.setState(State.Idle(UpdateType.Archive, undefined, explicit || undefined));
 			return;
 		}
 
+		const archName = process.arch === 'x64' ? 'x64' : 'arm64';
 		const version = remoteVersion.replace(/^release-v/, '').replace(/^v/, '');
-		const update: IUpdate = { version, productVersion: version, url: asset.browser_download_url };
+		const update: IUpdate = { version, productVersion: version, url: releaseAssetUrl(remoteVersion, archName) };
 		this.setState(State.AvailableForDownload(update, true));
 		void this.downloadUpdate(explicit);
 	}
@@ -213,7 +270,8 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 		} catch (error) {
 			if (!cancellation.token.isCancellationRequested) {
 				this.logService.error('update#downloadAndStage - failed to download or stage the update', error);
-				this.setState(State.Idle(UpdateType.Archive, getErrorMessage(error)));
+				// Only an explicit request should interrupt the user with a failure dialog.
+				this.setState(State.Idle(UpdateType.Archive, explicit ? getErrorMessage(error) : undefined));
 			}
 		} finally {
 			await fs.promises.rm(updateDirectory, { recursive: true, force: true });
@@ -357,9 +415,8 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
 
 	protected override async doIsLatestVersion(commit?: string, token: CancellationToken = CancellationToken.None): Promise<boolean | undefined> {
 		try {
-			const context = await this.requestService.request({ url: GITHUB_RELEASES_URL, headers: { Accept: 'application/vnd.github+json' }, callSite: 'updateService.darwin.isLatestVersion' }, token);
-			const release = await asJson<IGitHubRelease>(context);
-			return release?.tag_name ? !isNewerVersion(release.tag_name, commit ?? this.productService.version) : undefined;
+			const tag = await resolveLatestReleaseTag(this.requestService, this.logService, token);
+			return tag ? !isNewerVersion(tag, commit ?? this.productService.version) : undefined;
 		} catch (error) {
 			this.logService.warn('update#doIsLatestVersion - failed to check GitHub releases', error);
 			return undefined;
