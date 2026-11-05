@@ -88,9 +88,13 @@ class FakeWindowsMainService implements Pick<IWindowsMainService, 'createWorkben
 	nextHostId = 100;
 	hosts = new Map<number, FakeViewHost>();
 	createdResources: Array<{ workspace: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier | undefined }> = [];
+	creationError: Error | undefined;
 
 	async createWorkbenchHostInFrame(frame: import('electron').BrowserWindow, options: { workspace?: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier }): Promise<IWorkbenchHost> {
 		this.createdResources.push({ workspace: options.workspace });
+		if (this.creationError) {
+			throw this.creationError;
+		}
 		const host = new FakeViewHost(this.nextHostId++);
 		this.hosts.set(host.id, host);
 		return host;
@@ -212,6 +216,20 @@ suite('SpacesViewService', () => {
 		assert.strictEqual(snapshot.spaces[0].windowId, host.id);
 		assert.strictEqual(host.visible, true);
 		assert.strictEqual((currentWindow as unknown as { closed: boolean }).closed, true, 'original window is closed');
+	});
+
+	test('a failed host creation keeps the calling window open', async () => {
+		const config = { workspace: { id: '/work/project-a', uri: URI.file('/work/project-a') } } as import('../../../window/common/window.js').INativeWindowConfiguration;
+		const currentWindow = { id: 1, config, openedWorkspace: config.workspace, closed: false, close() { (this as { closed: boolean }).closed = true; } } as unknown as import('../../../window/electron-main/window.js').ICodeWindow;
+
+		windowsMainService.getWindowById = () => currentWindow;
+		windowsMainService.creationError = new Error('renderer failed to start');
+
+		const result = await service.addCurrentWindowAsSpace(1);
+
+		assert.strictEqual(result.result, SpaceOperationResult.OpenFailed);
+		assert.strictEqual((currentWindow as unknown as { closed: boolean }).closed, false, 'calling window stays open');
+		assert.strictEqual((await service.getSpaces(undefined)).spaces.length, 0, 'no space is registered');
 	});
 
 	test('opening a folder as space creates a view host and activates it', async () => {

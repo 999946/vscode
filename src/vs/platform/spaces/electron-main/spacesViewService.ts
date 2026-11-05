@@ -8,6 +8,7 @@ import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableMap, DisposableStore } from '../../../base/common/lifecycle.js';
 import { AddFirstParameterToFunctions } from '../../../base/common/types.js';
 import { URI, UriComponents } from '../../../base/common/uri.js';
+import { toErrorMessage } from '../../../base/common/errorMessage.js';
 import { createDecorator, IInstantiationService } from '../../instantiation/common/instantiation.js';
 import { ILifecycleMainService } from '../../lifecycle/electron-main/lifecycleMainService.js';
 import { ILogService } from '../../log/common/log.js';
@@ -212,8 +213,10 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 	 * `getWindowById`) have no matching `CodeWindow` and are left untouched.
 	 */
 	private async createHostAndAdopt(windowId: number | undefined, workspace: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier | undefined): Promise<ISpaceOperationResult> {
+		this.logService.info(`[spaces:view] creating Space host (workspace=${workspace ? 'yes' : 'empty'})`);
 		const creation = await this.createHostAsSpace(workspace);
 		if (creation.result !== SpaceOperationResult.Ok) {
+			this.logService.error(`[spaces:view] Space host creation failed; keeping calling window open`);
 			return creation;
 		}
 
@@ -316,8 +319,12 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 	private async createHostAsSpace(workspace: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier | undefined): Promise<ISpaceOperationResult> {
 
 		// Make sure the frame exists before we load any view into it
+		this.logService.trace('[spaces:view] ensuring shared frame');
 		const frame = this.ensureFrame();
 		if (!frame) {
+			const message = 'The shared Spaces window could not be created.';
+			this.logService.error(`[spaces:view] ${message}`);
+			this.sidebarHost?.showError('Space could not be opened', message);
 			return { result: SpaceOperationResult.OpenFailed };
 		}
 
@@ -325,9 +332,20 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		// gets a complete `INativeWindowConfiguration` (same as a real window).
 		let host: IWorkbenchHost;
 		try {
-			host = await this.windowsMainService.createWorkbenchHostInFrame(frame, { workspace });
+			this.logService.trace('[spaces:view] creating workbench host');
+			const hostPromise = this.windowsMainService.createWorkbenchHostInFrame(frame, { workspace });
+			host = await withTimeout(hostPromise, HOST_CREATION_TIMEOUT, lateHost => {
+				// Configuration resolution can finish after the timeout (for example
+				// while the macOS keychain is blocked). Do not leave an invisible
+				// renderer attached to the shared frame in that case.
+				this.logService.warn(`[spaces:view] disposing late-created host ${lateHost.id}`);
+				lateHost.close();
+			});
+			this.logService.trace(`[spaces:view] workbench host created (id=${host.id})`);
 		} catch (error) {
-			this.logService.error(`[spaces:view] Failed to create host in frame: ${error}`);
+			const message = toErrorMessage(error);
+			this.logService.error(`[spaces:view] Failed to create host in frame: ${message}`);
+			this.sidebarHost?.showError('Space could not be opened', message);
 			return { result: SpaceOperationResult.OpenFailed };
 		}
 
@@ -507,6 +525,25 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 
 		return { result: SpaceOperationResult.Ok, space: this.model.getSpace(target.id) };
 	}
+}
+
+const HOST_CREATION_TIMEOUT = 20000;
+
+function withTimeout<T>(promise: Promise<T>, timeout: number, onLateValue?: (value: T) => void): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		let timedOut = false;
+		const timer = setTimeout(() => {
+			timedOut = true;
+			reject(new Error(`Timed out after ${timeout}ms while creating the Space view`));
+		}, timeout);
+		promise.then(value => {
+			clearTimeout(timer);
+			if (timedOut) { onLateValue?.(value); } else { resolve(value); }
+		}, error => {
+			clearTimeout(timer);
+			if (!timedOut) { reject(error); }
+		});
+	});
 }
 
 function toSpaceWorkspace(workspace: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier | undefined): ISpaceWorkspace | undefined {

@@ -117,6 +117,11 @@ export class SpacesSidebarHost extends Disposable {
 		return this.view.webContents;
 	}
 
+	/** Show a main-process error in the sidebar when a Space cannot be created. */
+	showError(title: string, message: string): void {
+		this.errorPage.show(title, message);
+	}
+
 	override dispose(): void {
 		// This host owns the global `vscode:spacesSidebar` handler. Remove it so
 		// a recreated frame (new sidebar) does not collide with a stale handler.
