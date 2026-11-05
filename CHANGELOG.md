@@ -5,6 +5,18 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 发布新版本前，**必须先在顶部添加对应版本的 section**，否则 workflow 会失败。
 
+## [1.143.10] - 2026-11-05
+
+### 修复
+- Space 视图与左侧 Spaces 列表加载失败时不再是一片黑色，改为在对应区域内直接显示错误详情。
+  - 新增共享的 `SpacesErrorPageFallback`，在出错的 `WebContents` 中渲染一张自包含的错误页（`data:` URL，不依赖 IPC 与 preload），因此即使渲染进程崩溃、preload 失败或启动脚本报错也能显示。
+  - 错误页展示失败原因、Electron 错误码与日志目录，并提供「Reload Space」按钮。
+  - 重试由主进程驱动：`will-navigate` 拦截错误页的 `paracode-retry:` 链接并重新加载原地址，`before-input-event` 将 ⌘R / Ctrl+R、F5、Enter 映射到同一路径。
+- 左侧 sidebar 现在也会上报加载失败、渲染进程崩溃、preload 失败与渲染进程 console 错误，并支持就地重试，不再静默留白。
+- 主区 Space 视图的错误兜底统一改用上述共享实现，并补充 `did-navigate` 时重置错误状态，避免一次失败后无法再次展示。
+
+---
+
 ## [1.143.9] - 2026-11-05
 
 ### 修复
