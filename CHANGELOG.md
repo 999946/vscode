@@ -8,6 +8,9 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 ## [1.143.12] - 2026-11-05
 
 ### 修复
+- 修复 macOS Keychain 卡死导致整个应用冻结、新建 Space 后只剩黑屏且无法显示任何错误的问题。
+  - 根因：macOS 上 `safeStorage` 全是同步调用，当 `securityd` / SecurityAgent 无响应时，启动阶段的加密可用性探测会永久阻塞主线程，窗口不再绘制、日志不再落盘，因此任何错误都没机会显示。
+  - 改用本构建 Electron 提供的异步 `safeStorage` API（`isAsyncEncryptionAvailable` / `encryptStringAsync` / `decryptStringAsync`），把 Keychain 访问移出主线程；不可用时自动回退到同步实现。加密可用性探测失败按「不可用」处理，不再让调用方永久等待。
 - 修复新建 Space 时主进程或配置解析长时间阻塞导致旧窗口被关闭、界面只剩黑屏的问题。
   - 新 Space Host 创建成功并显示后才关闭调用窗口；创建失败会保留旧窗口。
   - Host 创建增加超时与落盘日志，超时或异常会在 Spaces 界面显示错误详情。
