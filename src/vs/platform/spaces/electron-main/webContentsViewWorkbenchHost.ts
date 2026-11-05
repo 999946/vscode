@@ -12,7 +12,6 @@ import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { FileAccess } from '../../../base/common/network.js';
 import { getMarks } from '../../../base/common/performance.js';
-import { escape } from '../../../base/common/strings.js';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
 import { ILogService } from '../../log/common/log.js';
 import { FocusMode } from '../../native/common/native.js';
@@ -23,6 +22,7 @@ import { IWorkbenchHost } from '../../window/electron-main/workbenchHost.js';
 import { IWorkbenchHostRegistry } from '../../window/electron-main/workbenchHostRegistry.js';
 import { ILoadEvent, LoadReason } from '../../window/electron-main/window.js';
 import { ISingleFolderWorkspaceIdentifier, IWorkspaceIdentifier } from '../../workspace/common/workspace.js';
+import { SpacesErrorPageFallback } from './spacesErrorPage.js';
 
 /**
  * A `IWorkbenchHost` that runs the workbench renderer inside a
@@ -79,7 +79,7 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 	private readyState: 'none' | 'navigating' | 'ready' = 'none';
 	get isReady(): boolean { return this.readyState === 'ready'; }
 
-	private errorShown = false;
+	private readonly errorPage: SpacesErrorPageFallback;
 	private rendererErrors: string[] = [];
 	private readonly loadTimeoutScheduler: RunOnceScheduler;
 
@@ -150,6 +150,15 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 		this._view.setBackgroundColor(this.themeMainService.getBackgroundColor());
 		this._view.setVisible(false);
 
+		// A Space that fails to load, crashes or loses its preload used to leave
+		// the view permanently black. The fallback renders a self-contained page
+		// (no IPC needed) and owns the retry path back to the workbench.
+		this.errorPage = this._register(new SpacesErrorPageFallback(this._view.webContents, this.logService, {
+			label: `host ${this.id}`,
+			retryUrl: FileAccess.asBrowserUri(`vs/code/electron-browser/workbench/workbench${this.environmentMainService.isBuilt ? '' : '-dev'}.html`).toString(true),
+			logsPath: this.environmentMainService.logsHome.fsPath
+		}));
+
 		// If the workbench renderer never reports readiness, assume startup is
 		// stuck - most often a silent JS error during boot that leaves the page
 		// on the splash / black screen. Keep the workbench page intact and
@@ -178,7 +187,7 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 			// (e.g. the user reloads or a new navigation supersedes the load).
 			if (isMainFrame && errorCode !== -3) {
 				// Allow a failed manual reload to re-render the error page.
-				this.errorShown = false;
+				this.errorPage.reset();
 				this.showErrorPage('Space failed to load', `${errorDescription}${validatedURL ? ` (${validatedURL})` : ''}`, String(errorCode));
 			}
 		}));
@@ -209,7 +218,7 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 			// to, e.g. through the "Reload Space" link on the error page, but not
 			// when the error page itself is loaded (a `data:` URL).
 			if (!this.isReady && !url.startsWith('data:')) {
-				this.errorShown = false;
+				this.errorPage.reset();
 				this.loadTimeoutScheduler.schedule(LOAD_TIMEOUT);
 			}
 		}));
@@ -267,7 +276,7 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 		this.configObjectUrl.update(configuration);
 		this._config = configuration;
 		this.readyState = 'navigating';
-		this.errorShown = false;
+		this.errorPage.reset();
 		this.rendererErrors = [];
 
 		const windowUrl = FileAccess.asBrowserUri(`vs/code/electron-browser/workbench/workbench${this.environmentMainService.isBuilt ? '' : '-dev'}.html`).toString(true);
@@ -392,64 +401,19 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 	}
 
 	/**
-	 * Render an in-place error page for this Space instead of leaving the view
-	 * blank. The page is a self-contained `data:` URL: it performs no IPC, so it
-	 * works even when the renderer process is gone, preload failed or the boot
-	 * JS crashed before the workbench could start. It shows the failure, the log
-	 * directory, and a link back to the workbench to retry.
+	 * Surface a failure inside this Space instead of leaving the view blank.
+	 *
+	 * See `SpacesErrorPageFallback`: the page needs no IPC, so it shows up even
+	 * when the renderer is gone, preload failed or boot JS crashed, and retrying
+	 * is driven from the main process.
 	 */
 	private showErrorPage(title: string, message: string, errorCode?: string, openDevTools = false): void {
-		if (this.errorShown || this._view.webContents.isDestroyed()) {
-			return;
-		}
-		this.errorShown = true;
 		this.loadTimeoutScheduler.cancel();
-		this.logService.error(`[spaces:view] host ${this.id} ${title}: ${message}`);
-
-		const workbenchUrl = FileAccess.asBrowserUri(`vs/code/electron-browser/workbench/workbench${this.environmentMainService.isBuilt ? '' : '-dev'}.html`).toString(true);
-		const errorPageUrl = `data:text/html;charset=utf-8,${encodeURIComponent(this.buildErrorPageHtml(title, message, errorCode, workbenchUrl))}`;
-
-		void this._view.webContents.loadURL(errorPageUrl).catch(error => {
-			this.logService.error(`[spaces:view] failed to render error page for host ${this.id}: ${toErrorMessage(error)}`);
-		});
+		this.errorPage.show(title, message, errorCode);
 
 		if (openDevTools) {
 			this._view.webContents.openDevTools();
 		}
-	}
-
-	private buildErrorPageHtml(title: string, message: string, errorCode: string | undefined, workbenchUrl: string): string {
-		const logsPath = this.environmentMainService.logsHome.fsPath;
-		const code = errorCode ? `<p class="code">Error code: ${escape(errorCode)}</p>` : '';
-
-		return `<!DOCTYPE html>
-<html>
-<head>
-	<meta charset="utf-8" />
-	<style>
-		body { margin: 0; font-family: -apple-system, system-ui, 'Segoe UI', sans-serif; background: #1e1e1e; color: #cccccc; }
-		.container { max-width: 760px; margin: 0 auto; padding: 48px 24px; }
-		h1 { font-size: 24px; font-weight: 600; margin: 0 0 12px; }
-		.message { margin: 12px 0; line-height: 1.5; word-break: break-word; }
-		.code { color: #f48771; font-weight: 500; }
-		.logs { color: #969696; font-size: 12px; }
-		.logs code { background: #252526; padding: 2px 6px; border-radius: 3px; word-break: break-all; }
-		.button { display: inline-block; margin-top: 16px; padding: 8px 18px; background: #0e639c; color: #ffffff; text-decoration: none; border-radius: 4px; font-size: 13px; }
-		.button:hover { background: #1177bb; }
-		.hint { color: #969696; font-size: 12px; margin-top: 8px; }
-	</style>
-</head>
-<body>
-	<div class="container">
-		<h1>\u26a0\ufe0f ${escape(title)}</h1>
-		<p class="message">${escape(message)}</p>
-		${code}
-		<p class="logs">Logs: <code>${escape(logsPath)}</code></p>
-		<a class="button" href="${escapeAttribute(workbenchUrl)}">Reload Space</a>
-		<p class="hint">If this keeps happening, open DevTools (Cmd+Alt+I) and check the console, then inspect the log directory above.</p>
-	</div>
-</body>
-</html>`;
 	}
 
 	close(): void {
@@ -471,8 +435,3 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 // exceed 20s on slower machines, and a false "stalled" overlay is worse than
 // waiting a bit longer. The overlay still surfaces a genuinely stuck boot.
 const LOAD_TIMEOUT = 45000;
-
-/** Escape a value for use inside a double-quoted HTML attribute. */
-function escapeAttribute(value: string): string {
-	return escape(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}

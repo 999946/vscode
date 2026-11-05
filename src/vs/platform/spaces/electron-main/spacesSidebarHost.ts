@@ -4,18 +4,21 @@
  *--------------------------------------------------------------------------------------------*/
 
 import electron from 'electron';
+import { Event } from '../../../base/common/event.js';
 import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { FileAccess } from '../../../base/common/network.js';
 import { validatedIpcMain } from '../../../base/parts/ipc/electron-main/ipcMain.js';
 import { basename, extname } from '../../../base/common/resources.js';
 import { URI } from '../../../base/common/uri.js';
 import { IDialogMainService } from '../../dialogs/electron-main/dialogMainService.js';
+import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
 import { ILogService } from '../../log/common/log.js';
 import { IThemeMainService } from '../../theme/electron-main/themeMainService.js';
 import { SpaceOperationResult, ISpaceWorkspace, SPACES_NEW_TAB_CHANNEL, SPACES_CLOSE_TAB_CHANNEL, SPACES_OPEN_SETTINGS_CHANNEL } from '../common/spaces.js';
 import { ISpacesSettings } from '../common/spacesConfig.js';
 import { ISpacesSidebarData, ISpacesSidebarRpcRequest, ISpacesSidebarSpace, ISpacesSidebarTab, SpacesSidebarRpcMethod, SPACES_SIDEBAR_CHANGED_CHANNEL, SPACES_SIDEBAR_CHANNEL } from '../common/spacesSidebarRpc.js';
 import type { ISerializedSpaceTab } from '../common/spacesTabs.js';
+import { SpacesErrorPageFallback } from './spacesErrorPage.js';
 import type { ISpacesViewService } from './spacesViewService.js';
 
 /** Default width of the shared Spaces sidebar in the frame window. */
@@ -36,11 +39,14 @@ export class SpacesSidebarHost extends Disposable {
 
 	private readonly view: electron.WebContentsView;
 
+	private readonly errorPage: SpacesErrorPageFallback;
+
 	constructor(
 		frame: electron.BrowserWindow,
 		private readonly spacesViewService: Omit<ISpacesViewService, '_serviceBrand'>,
 		@IThemeMainService private readonly themeMainService: IThemeMainService,
 		@IDialogMainService private readonly dialogMainService: IDialogMainService,
+		@IEnvironmentMainService environmentMainService: IEnvironmentMainService,
 		@ILogService private readonly logService: ILogService
 	) {
 		super();
@@ -70,9 +76,41 @@ export class SpacesSidebarHost extends Disposable {
 
 		this._register(this.spacesViewService.onDidChangeSpaces(() => this.pushChange()));
 
-		void this.view.webContents.loadURL(
-			FileAccess.asBrowserUri('vs/platform/spaces/electron-browser/spacesSidebar.html').toString(true)
-		);
+		const sidebarUrl = FileAccess.asBrowserUri('vs/platform/spaces/electron-browser/spacesSidebar.html').toString(true);
+
+		// A failed sidebar load used to leave the 280px strip permanently black:
+		// nothing else is drawn there, so an error must be visible in the strip
+		// itself. The fallback keeps its own retry path.
+		this.errorPage = this._register(new SpacesErrorPageFallback(this.view.webContents, logService, {
+			label: 'sidebar',
+			retryUrl: sidebarUrl,
+			logsPath: environmentMainService.logsHome.fsPath
+		}));
+
+		this._register(Event.fromNodeEventEmitter(this.view.webContents, 'did-fail-load', (event: Electron.Event, errorCode: number, errorDescription: string, validatedURL: string, isMainFrame: boolean) => ({ errorCode, errorDescription, validatedURL, isMainFrame }))(({ errorCode, errorDescription, validatedURL, isMainFrame }) => {
+			// -3 (ERR_ABORTED) is the expected error when navigation is interrupted.
+			if (isMainFrame && errorCode !== -3) {
+				this.errorPage.show('Spaces sidebar failed to load', `${errorDescription}${validatedURL ? ` (${validatedURL})` : ''}`, String(errorCode));
+			}
+		}));
+
+		this._register(Event.fromNodeEventEmitter(this.view.webContents, 'render-process-gone', (event: Electron.Event, details: Electron.RenderProcessGoneDetails) => details)(details => {
+			this.errorPage.show('Spaces sidebar renderer crashed', `Reason: ${details?.reason ?? 'unknown'}, exit code: ${details?.exitCode ?? 'unknown'}`);
+		}));
+
+		this._register(Event.fromNodeEventEmitter(this.view.webContents, 'preload-error', (event: Electron.Event, preloadPath: string, error: Error) => ({ preloadPath, error }))(({ preloadPath, error }) => {
+			this.errorPage.show('Spaces sidebar preload script failed', `${preloadPath}: ${error?.message ?? error}`);
+		}));
+
+		this._register(Event.fromNodeEventEmitter(this.view.webContents, 'console-message', (details: Electron.WebContentsConsoleMessageEventParams) => details)((details: Electron.WebContentsConsoleMessageEventParams) => {
+			if (details.level === 'error') {
+				this.logService.error(`[spaces:sidebar] renderer: ${details.message}`);
+			}
+		}));
+
+		void this.view.webContents.loadURL(sidebarUrl).catch(error => {
+			this.errorPage.show('Spaces sidebar failed to load', String(error));
+		});
 	}
 
 	get webContents(): electron.WebContents {
