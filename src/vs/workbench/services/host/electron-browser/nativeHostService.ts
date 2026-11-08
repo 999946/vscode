@@ -77,8 +77,14 @@ class WorkbenchHostService extends Disposable implements IHostService {
 	async hadLastFocus(): Promise<boolean> {
 		const activeWindowId = await this.nativeHostService.getActiveWindowId();
 
+		// The main process could not identify any focused/active workbench. Rather
+		// than silently dropping the notification (which is what made "Check for
+		// Updates" look broken in Spaces), treat a single-workbench app as "this
+		// window had focus". Showing the message once is always better than
+		// showing it never; `shouldShowWorkbenchDialog` on the main process side
+		// already prevents duplicates when several workbenches compete.
 		if (typeof activeWindowId === 'undefined') {
-			return false;
+			return true;
 		}
 
 		return activeWindowId === this.nativeHostService.windowId;

@@ -76,6 +76,15 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 
 	get id(): number { return this._view.webContents.id; }
 
+	/**
+	 * Mirrors `ICodeWindow.lastFocusTime` so host-agnostic code can pick the
+	 * "last focused" workbench without knowing if it is window- or view-backed.
+	 * Updated when the renderer gains focus, when it is explicitly focused and
+	 * when it is shown (a newly shown Space is the one the user is looking at).
+	 */
+	private _lastFocusTime = Date.now();
+	get lastFocusTime(): number { return this._lastFocusTime; }
+
 	private readyState: 'none' | 'navigating' | 'ready' = 'none';
 	get isReady(): boolean { return this.readyState === 'ready'; }
 
@@ -182,6 +191,13 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 			this.logService.trace(`[spaces:view] host ${this.id} did-finish-load`);
 		}));
 
+		// Track focus so main-process code can pick the last focused workbench
+		// (e.g. to surface an update dialog) even though a view host has no
+		// `BrowserWindow` whose focus events would otherwise be observed.
+		this._register(Event.fromNodeEventEmitter(this._view.webContents, 'focus')(() => {
+			this._lastFocusTime = Date.now();
+		}));
+
 		this._register(Event.fromNodeEventEmitter(this._view.webContents, 'did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => ({ errorCode, errorDescription, validatedURL, isMainFrame }))(({ errorCode, errorDescription, validatedURL, isMainFrame }) => {
 			// -3 (ERR_ABORTED) is the expected error when navigation is interrupted
 			// (e.g. the user reloads or a new navigation supersedes the load).
@@ -239,6 +255,7 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 
 	show(): void {
 		if (this._frame && !this._frame.isDestroyed() && !this._view.webContents.isDestroyed()) {
+			this._lastFocusTime = Date.now();
 			// Attach if not attached yet
 			const children = this._frame.contentView.children;
 			if (!children.includes(this._view)) {
@@ -325,6 +342,7 @@ export class WebContentsViewWorkbenchHost extends Disposable implements IWorkben
 		switch (options?.mode ?? FocusMode.Transfer) {
 			case FocusMode.Transfer:
 			case FocusMode.Force:
+				this._lastFocusTime = Date.now();
 				this._onWillFocus.fire();
 				this._view.webContents.focus();
 				break;

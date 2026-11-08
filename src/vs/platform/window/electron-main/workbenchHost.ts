@@ -53,6 +53,13 @@ export interface IWorkbenchHost extends IDisposable {
 	// services (e.g. Spaces) can be written against `IWorkbenchHost` only.
 	readonly id: number;
 	readonly config: INativeWindowConfiguration | undefined;
+
+	/**
+	 * Timestamp of the last time this workbench received focus. Mirrors
+	 * `ICodeWindow.lastFocusTime` so host-agnostic code can pick the "last
+	 * focused" workbench without knowing whether it is window- or view-backed.
+	 */
+	readonly lastFocusTime: number;
 	readonly openedWorkspace?: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier;
 	readonly isReady: boolean;
 	readonly whenClosedOrLoaded: Promise<void>;

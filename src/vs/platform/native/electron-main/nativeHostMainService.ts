@@ -37,6 +37,7 @@ import { defaultWindowState, ICodeWindow, LoadReason } from '../../window/electr
 import { IColorScheme, IOpenedAuxiliaryWindow, IOpenedMainWindow, IOpenEmptyWindowOptions, IOpenWindowOptions, IPoint, IRectangle, IWindowOpenable } from '../../window/common/window.js';
 import { defaultBrowserWindowOptions, IWindowsMainService, OpenContext } from '../../windows/electron-main/windows.js';
 import { IWorkbenchHostRegistry } from '../../window/electron-main/workbenchHostRegistry.js';
+import { getFocusedWorkbenchHost, getLastFocusedWorkbenchHost } from '../../window/electron-main/workbenchFocus.js';
 import { isWorkspaceIdentifier, toWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { IWorkspacesManagementMainService } from '../../workspaces/electron-main/workspacesManagementMainService.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
@@ -296,10 +297,30 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 	}
 
 	async getWindowCount(windowId: number | undefined): Promise<number> {
-		return this.windowsMainService.getWindowCount();
+		// Count every workbench, not only `BrowserWindow`-backed ones: Spaces runs
+		// workbenches in `WebContentsView`s attached to a shared frame, so counting
+		// `CodeWindow`s reports 0 while the user clearly has windows open.
+		const hostCount = this.workbenchHostRegistry.getHosts().length;
+		return hostCount > 0 ? hostCount : this.windowsMainService.getWindowCount();
 	}
 
 	async getActiveWindowId(windowId: number | undefined): Promise<number | undefined> {
+		// Prefer the workbench that actually owns keyboard focus. A Spaces
+		// workbench has no `BrowserWindow`, so `getFocusedWindow()` cannot see it;
+		// `getFocusedWebContents()` can, and the view host id is that webContents id.
+		const focusedHost = getFocusedWorkbenchHost(this.workbenchHostRegistry.getHosts(), webContents.getFocusedWebContents());
+		if (focusedHost) {
+			return focusedHost.id;
+		}
+
+		// Nothing focused right now (app in the background, menu bar interaction):
+		// fall back to the most recently focused workbench so callers such as
+		// `hadLastFocus()` still identify the window the user interacted with.
+		const lastFocusedHost = getLastFocusedWorkbenchHost(this.workbenchHostRegistry.getHosts());
+		if (lastFocusedHost) {
+			return lastFocusedHost.id;
+		}
+
 		const activeWindow = this.windowsMainService.getFocusedWindow() || this.windowsMainService.getLastActiveWindow();
 		if (activeWindow) {
 			return activeWindow.id;
@@ -309,6 +330,11 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 	}
 
 	async getActiveWindowPosition(): Promise<IRectangle | undefined> {
+		const focusedHost = getFocusedWorkbenchHost(this.workbenchHostRegistry.getHosts(), webContents.getFocusedWebContents());
+		if (focusedHost) {
+			return focusedHost.getBounds();
+		}
+
 		const activeWindow = this.windowsMainService.getFocusedWindow() || this.windowsMainService.getLastActiveWindow();
 		if (activeWindow) {
 			return activeWindow.getBounds();
@@ -643,18 +669,18 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 	//#region Dialog
 
 	async showMessageBox(windowId: number | undefined, options: MessageBoxOptions & INativeHostOptions): Promise<MessageBoxReturnValue> {
-		const window = this.windowById(options?.targetWindowId, windowId);
-		return this.dialogMainService.showMessageBox(options, window?.win ?? undefined);
+		const window = this.dialogParentWindow(options?.targetWindowId, windowId);
+		return this.dialogMainService.showMessageBox(options, window);
 	}
 
 	async showSaveDialog(windowId: number | undefined, options: SaveDialogOptions & INativeHostOptions): Promise<SaveDialogReturnValue> {
-		const window = this.windowById(options?.targetWindowId, windowId);
-		return this.dialogMainService.showSaveDialog(options, window?.win ?? undefined);
+		const window = this.dialogParentWindow(options?.targetWindowId, windowId);
+		return this.dialogMainService.showSaveDialog(options, window);
 	}
 
 	async showOpenDialog(windowId: number | undefined, options: OpenDialogOptions & INativeHostOptions): Promise<OpenDialogReturnValue> {
-		const window = this.windowById(options?.targetWindowId, windowId);
-		return this.dialogMainService.showOpenDialog(options, window?.win ?? undefined);
+		const window = this.dialogParentWindow(options?.targetWindowId, windowId);
+		return this.dialogMainService.showOpenDialog(options, window);
 	}
 
 	async pickFileFolderAndOpen(windowId: number | undefined, options: INativeOpenDialogOptions): Promise<void> {
@@ -1666,6 +1692,45 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
 
 	private windowById(windowId: number | undefined, fallbackCodeWindowId?: number): ICodeWindow | IAuxiliaryWindow | undefined {
 		return this.codeWindowById(windowId) ?? this.auxiliaryWindowById(windowId) ?? this.codeWindowById(fallbackCodeWindowId);
+	}
+
+	/**
+	 * Resolves the `electron.BrowserWindow` a dialog should be modal for. A Spaces
+	 * workbench lives in a `WebContentsView` inside a shared frame
+	 * `BrowserWindow`, which is not a `CodeWindow`, so it cannot be reached
+	 * through `windowsMainService`. Without this the dialog would float free of
+	 * the frame the user is looking at.
+	 */
+	private dialogParentWindow(windowId: number | undefined, fallbackCodeWindowId?: number): BrowserWindow | undefined {
+		const window = this.windowById(windowId, fallbackCodeWindowId);
+		if (window?.win) {
+			return window.win;
+		}
+
+		const host = this.workbenchHostRegistry.getHostById(windowId ?? fallbackCodeWindowId!);
+		if (!host) {
+			return undefined;
+		}
+
+		return this.findFrameWindowForHost(host.id);
+	}
+
+	/** Finds the shared Spaces frame that currently hosts the given workbench. */
+	private findFrameWindowForHost(hostId: number): BrowserWindow | undefined {
+		for (const window of BrowserWindow.getAllWindows()) {
+			if (window.isDestroyed()) {
+				continue;
+			}
+			// `View` itself has no `webContents`; only `WebContentsView` children do.
+			if (window.contentView.children.some(child => {
+				const contents = (child as Partial<Electron.WebContentsView>).webContents;
+				return contents?.id === hostId;
+			})) {
+				return window;
+			}
+		}
+
+		return undefined;
 	}
 
 	private codeWindowById(windowId: number | undefined): ICodeWindow | undefined {

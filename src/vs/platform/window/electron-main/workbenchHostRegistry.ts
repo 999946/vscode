@@ -29,6 +29,14 @@ export interface IWorkbenchHostRegistry {
 
 	getHostById(hostId: number): IWorkbenchHost | undefined;
 	getHostByWebContents(webContents: Electron.WebContents): IWorkbenchHost | undefined;
+
+	/**
+	 * All live workbench hosts, regardless of the container they are rendered in.
+	 * Used by main-process code that must reason about "is there any workbench at
+	 * all" instead of only counting `BrowserWindow`-backed `CodeWindow`s - Spaces
+	 * renderers live in `WebContentsView`s and never appear in that count.
+	 */
+	getHosts(): readonly IWorkbenchHost[];
 }
 
 export class WorkbenchHostRegistry implements IWorkbenchHostRegistry {
@@ -65,5 +73,9 @@ export class WorkbenchHostRegistry implements IWorkbenchHostRegistry {
 		}
 
 		return undefined;
+	}
+
+	getHosts(): readonly IWorkbenchHost[] {
+		return Array.from(this.hosts.values());
 	}
 }

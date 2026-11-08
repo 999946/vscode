@@ -5,6 +5,22 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 发布新版本前，**必须先在顶部添加对应版本的 section**，否则 workflow 会失败。
 
+## [1.143.14] - 2026-11-08
+
+### 修复
+- 修复 Spaces 模式下「检查更新」（Check for Updates…）点击后完全没有反应、既不提示「当前已是最新版本」也不提示检查失败的问题。
+  - 根因：Spaces 的每个工作台都运行在共享 frame 窗口的 `WebContentsView` 里，没有独立的 `BrowserWindow`。主进程的窗口查询（`getActiveWindowId()`、`getWindowCount()`、对话框父窗口解析）只认识 `CodeWindow`，于是：
+    - `hadLastFocus()` 永远返回 false，工作台侧的主题化提示被静默丢弃；
+    - 原生兜底弹窗要么被误判跳过，要么挂到用户根本没在看的另一个窗口上。
+  - 修复：主进程新增 `workbenchFocus.ts`，统一按「活跃的 webContents」识别工作台（同时覆盖 `CodeWindow` 与 Spaces 视图），并据此：
+    - `getActiveWindowId()` / `getActiveWindowPosition()` 返回真正聚焦的工作台 id；
+    - `getWindowCount()` 统计所有工作台（Spaces 模式不再误报 0 个窗口）；
+    - 对话框解析到 Spaces 所在的 frame 窗口，提示会出现在用户正看着的地方；
+    - 无法确定焦点时回退到最近聚焦的工作台，而不是丢弃提示。
+  - 新增 25 个单元测试覆盖：Spaces 视图工作台、`CodeWindow` id 与 webContents id 不一致、多 Space 共享一个 frame、无焦点回退、无工作台时不重复弹原生框等边缘场景。
+
+---
+
 ## [1.143.13] - 2026-11-06
 
 ### 修复

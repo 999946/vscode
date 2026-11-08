@@ -25,6 +25,7 @@ import { IApplicationStorageMainService } from '../../../storage/electron-main/s
  */
 class FakeViewHost implements IWorkbenchHost {
 	visible = false;
+	lastFocusTime = Date.now();
 	isReady = false;
 	openedWorkspace: ISingleFolderWorkspaceIdentifier | IWorkspaceIdentifier | undefined;
 	config = undefined;
