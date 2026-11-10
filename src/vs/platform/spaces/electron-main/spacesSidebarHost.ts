@@ -122,6 +122,22 @@ export class SpacesSidebarHost extends Disposable {
 		this.errorPage.show(title, message);
 	}
 
+	/**
+	 * Surfaces a non-fatal error (e.g. an unreadable Spaces root) as an inline
+	 * banner without replacing the Space list, and pushes it to the renderer.
+	 */
+	showTransientError(title: string, message: string): void {
+		this.pendingError = `${title}: ${message}`;
+		this.pushChange();
+	}
+
+	private pendingError: string | undefined = undefined;
+
+	/** Clears an inline error once the operation that produced it succeeded. */
+	private clearTransientError(): void {
+		this.pendingError = undefined;
+	}
+
 	override dispose(): void {
 		// This host owns the global `vscode:spacesSidebar` handler. Remove it so
 		// a recreated frame (new sidebar) does not collide with a stale handler.
@@ -144,6 +160,8 @@ export class SpacesSidebarHost extends Disposable {
 		const args = request.args ?? [];
 		switch (method) {
 			case 'getSpaces':
+				// A successful list read means any previous inline error is stale.
+				this.clearTransientError();
 				return this.toSidebarData();
 			case 'createEmptySpace':
 				return this.spacesViewService.createEmptySpace(undefined);
@@ -187,6 +205,20 @@ export class SpacesSidebarHost extends Disposable {
 					return this.spacesViewService.openFolderAsSpace(undefined, URI.file(picked));
 				}
 				return { result: SpaceOperationResult.Ok };
+			}
+			case 'pickSpacesRoot': {
+				const result = await this.dialogMainService.showOpenDialog({
+					title: 'Choose the Spaces Root Folder',
+					properties: ['openDirectory', 'createDirectory']
+				});
+				const picked = result.filePaths?.[0];
+				if (!picked) {
+					return this.toSidebarSettings();
+				}
+				await this.spacesViewService.setSidebarSetting(undefined, 'spacesRoot', picked);
+				// Adding a root turns its first-level sub-folders into Spaces.
+				await this.spacesViewService.scanSpacesRoot();
+				return this.toSidebarSettings();
 			}
 			case 'switchToSpace':
 				return this.spacesViewService.switchToSpace(undefined, args[0] as string);
@@ -234,7 +266,7 @@ export class SpacesSidebarHost extends Disposable {
 			isCurrent: space.id === activeId,
 			tabCount: tabCounts.get(space.id) ?? 0
 		}));
-		return { spaces };
+		return this.pendingError ? { spaces, error: this.pendingError } : { spaces };
 	}
 }
 

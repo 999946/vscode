@@ -14,15 +14,20 @@ import type { ISpacesSidebarData, ISpacesSidebarSpace, ISpacesSidebarTab, ISpace
  * hosted in a `WebContentsView` attached to the frame `BrowserWindow`:
  * - collapsible (folded trigger shows the active Space's initial)
  * - pinnable (pinned panels never auto-collapse)
- * - hover to expand, 180 ms delayed auto-collapse on pointer leave
+ * - hover to expand, 180 ms delayed auto-collapse on pointer leave. The
+ *   collapsed state is intentionally not persisted: restoring it used to hide
+ *   the panel (and, with a CSS bug, the trigger) behind a blank strip.
  * - draggable width (180..560 px, default 260)
  * - per-Space rows with expand arrow, initial avatar, name and tab-count badge
  * - right-click context menu (rename / new tab / delete with confirmation)
  * - expanded rows list the Space's persisted tabs
  *
  * Panel chrome state (collapsed/pinned/width) lives in this view's own
- * `localStorage`, exactly like Terax. All Space data comes from the main
- * process over the `window.spacesSidebar` bridge.
+ * `localStorage`. All Space data comes from the main process over the
+ * `window.spacesSidebar` bridge.
+ *
+ * Failures are rendered inline in the sidebar itself: a blank 280px strip
+ * tells the user nothing, so every failure path must end up visible here.
  */
 
 interface ISpacesSidebarBridge {
@@ -37,7 +42,12 @@ const PANEL_MIN_WIDTH = 180;
 const PANEL_MAX_WIDTH = 560;
 const COLLAPSE_DELAY_MS = 180;
 
-const STORAGE_COLLAPSED = 'paracode.spaces.sidebar.collapsed';
+/**
+ * The collapsed state is deliberately NOT persisted: it is a transient hover
+ * state. Persisting it meant that moving the pointer out of the panel wrote
+ * `collapsed=true`, and the next start restored a panel whose only visible
+ * chrome was a trigger that a CSS bug kept hidden — i.e. a blank strip.
+ */
 const STORAGE_PINNED = 'paracode.spaces.sidebar.pinned';
 const STORAGE_WIDTH = 'paracode.spaces.sidebar.width';
 
@@ -69,9 +79,12 @@ const triggerAvatar = document.getElementById('triggerAvatar') as HTMLSpanElemen
 const pinBtn = document.getElementById('pinBtn') as HTMLButtonElement;
 const collapseBtn = document.getElementById('collapseBtn') as HTMLButtonElement;
 const newBtn = document.getElementById('newBtn') as HTMLButtonElement;
+const rootBtn = document.getElementById('rootBtn') as HTMLButtonElement;
+const rootHint = document.getElementById('rootHint') as HTMLDivElement;
+const errorBanner = document.getElementById('errorBanner') as HTMLDivElement;
 const resizeHandle = document.getElementById('resizeHandle') as HTMLDivElement;
 
-let collapsed = readBool(STORAGE_COLLAPSED, false);
+let collapsed = false;
 let pinned = readBool(STORAGE_PINNED, false);
 let width = readWidth();
 let collapseTimer: number | null = null;
@@ -82,9 +95,11 @@ const expanded = new Set<string>();
 
 // ---- state persistence ----
 
-function persistCollapsed(value: boolean): void {
+function setCollapsed(value: boolean): void {
+	if (collapsed === value) {
+		return;
+	}
 	collapsed = value;
-	try { localStorage.setItem(STORAGE_COLLAPSED, String(value)); } catch { /* noop */ }
 	renderChrome();
 }
 
@@ -107,7 +122,11 @@ function renderChrome(): void {
 	pinBtn.classList.toggle('active', pinned);
 	pinBtn.textContent = pinned ? 'P' : 'P';
 	pinBtn.title = pinned ? 'Unpin spaces' : 'Pin spaces open';
-	collapseBtn.style.display = pinned ? '' : 'none';
+	collapseBtn.style.display = '';
+
+	rootHint.textContent = settings.spacesRoot ? `Root: ${settings.spacesRoot}` : '';
+	rootHint.title = settings.spacesRoot ?? '';
+	rootHint.style.display = settings.spacesRoot ? '' : 'none';
 
 	const active = data.spaces.find(s => s.isCurrent);
 	if (settings.showSpaceInitials && active) {
@@ -123,6 +142,31 @@ function renderChrome(): void {
 	}
 }
 
+/**
+ * Shows a failure inline in the sidebar. Without this, any RPC or rendering
+ * failure left the whole 280px strip empty, which is indistinguishable from a
+ * crash. Errors are sticky until the next successful refresh.
+ */
+function showError(error: unknown): void {
+	const message = error instanceof Error ? `${error.message}` : String(error);
+	errorBanner.textContent = '';
+	const banner = document.createElement('div');
+	banner.className = 'error-banner';
+	const title = document.createElement('span');
+	title.className = 'error-title';
+	title.textContent = 'Spaces failed to load';
+	const detail = document.createElement('span');
+	detail.className = 'error-detail';
+	detail.textContent = message;
+	banner.appendChild(title);
+	banner.appendChild(detail);
+	errorBanner.appendChild(banner);
+}
+
+function clearError(): void {
+	errorBanner.textContent = '';
+}
+
 function spaceInitial(name: string): string {
 	const ch = name.trim()[0];
 	return ch ? ch.toUpperCase() : '?';
@@ -133,11 +177,7 @@ function expand(): void {
 		window.clearTimeout(collapseTimer);
 		collapseTimer = null;
 	}
-	persistCollapsed(false);
-}
-
-function collapse(): void {
-	persistCollapsed(true);
+	setCollapsed(false);
 }
 
 function scheduleCollapse(): void {
@@ -153,7 +193,7 @@ function scheduleCollapse(): void {
 	}
 	collapseTimer = window.setTimeout(() => {
 		collapseTimer = null;
-		collapse();
+		setCollapsed(true);
 	}, COLLAPSE_DELAY_MS);
 }
 
@@ -273,6 +313,7 @@ function render(): void {
 			});
 		}
 		list.appendChild(empty);
+		renderChrome();
 		return;
 	}
 
@@ -495,19 +536,21 @@ function showNewSpaceDialog(): void {
 
 // ---- events ----
 
-panel.addEventListener('pointerenter', expand);
+panel.addEventListener('pointerenter', () => expand());
 panel.addEventListener('pointerleave', scheduleCollapse);
-trigger.addEventListener('pointerenter', expand);
+trigger.addEventListener('pointerenter', () => expand());
 trigger.addEventListener('pointerleave', scheduleCollapse);
 
-// Clicking the collapsed trigger expands; clicking an expanded (pinned) header
-// collapses. Matches Terax's trigger toggle.
-trigger.addEventListener('click', () => {
-	if (collapsed) { expand(); }
-});
-collapseBtn.addEventListener('click', () => collapse());
+// Clicking the collapsed trigger expands. The trigger is only visible while
+// collapsed (see the CSS), so this is a plain expand.
+trigger.addEventListener('click', () => expand());
+collapseBtn.addEventListener('click', () => setCollapsed(true));
 
 pinBtn.addEventListener('click', () => persistPinned(!pinned));
+
+rootBtn.addEventListener('click', () => {
+	void window.spacesSidebar.invoke('pickSpacesRoot').then(() => refresh()).catch(showError);
+});
 
 newBtn.addEventListener('click', () => {
 	// No spaces root configured -> guide to settings first (Terax behavior).
@@ -540,14 +583,31 @@ resizeHandle.addEventListener('pointerdown', (e) => {
 // ---- boot ----
 
 async function refresh(): Promise<void> {
-	const [spacesData, settingsData] = await Promise.all([
-		window.spacesSidebar.invoke('getSpaces'),
-		window.spacesSidebar.invoke('getSettings')
-	]);
-	data = spacesData as ISpacesSidebarData;
-	settings = settingsData as ISpacesSidebarSettings;
-	render();
+	try {
+		const [spacesData, settingsData] = await Promise.all([
+			window.spacesSidebar.invoke('getSpaces'),
+			window.spacesSidebar.invoke('getSettings')
+		]);
+		data = spacesData as ISpacesSidebarData;
+		settings = settingsData as ISpacesSidebarSettings;
+		if (data.error) {
+			showError(data.error);
+		} else {
+			clearError();
+		}
+		render();
+	} catch (error) {
+		// Never leave the strip blank: keep whatever chrome is already drawn
+		// and surface the failure inline.
+		showError(error);
+		renderChrome();
+	}
 }
 
 window.spacesSidebar.onDidChange(() => void refresh());
+
+// Drop the stale flag written by older builds, which persisted the
+// hover-driven collapse.
+try { localStorage.removeItem('paracode.spaces.sidebar.collapsed'); } catch { /* noop */ }
+
 void refresh();

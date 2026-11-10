@@ -5,6 +5,35 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 发布新版本前，**必须先在顶部添加对应版本的 section**，否则 workflow 会失败。
 
+## [1.143.15] - 2026-11-10
+
+### 新功能
+- **Spaces root（对齐 Terax）**：新增 `spaces.root` 设置，root 文件夹下**第一层子文件夹**会各自成为一个 Space。
+  - 启动时扫描 root 自动补齐 Space；root 设置变化时自动重新同步。
+  - 侧栏新增「⚙ Set Spaces Root…」按钮，可直接选择 root 目录，选中后立即扫描。
+  - 新建 Space 时会在 root 下创建对应文件夹；删除 root 下的 Space 会同时删除其文件夹。
+  - 扫描规则（均有单测覆盖）：跳过普通文件、隐藏项（`.` 开头，如 `.git` / `.DS_Store`）、重复目录（按路径归一化 + 大小写不敏感比较）、以及会逃逸 root 的非法名称；Windows/POSIX 分隔符、末尾斜杠、UNC 路径、盘符根目录均正确处理。
+- **Spaces 模式持久化**：切换到 Spaces 模式后，下次启动会**恢复 Spaces 模式**（共享 frame + 所有 Space + 上次的 active Space），而不是打开普通窗口。
+  - 状态保存在用户数据目录的 `spaces-state.json`（原子写入），因为启动早期就需读取，而应用存储数据库此时尚未初始化。
+  - 恢复时沿用原 Space id，使已持久化的 tab 状态（编辑器/终端）继续匹配。
+  - 边缘场景（均有单测覆盖）：无状态文件、0 个 Space、active id 丢失、JSON 损坏、未知版本、重复 id/重复路径、文件夹已从磁盘删除、恢复失败时回退到普通窗口并清理残留 frame。
+
+### 修复
+- 修复**新建 2 个 Space 后左侧 Spaces 列表完全空白**（280px 黑条）的问题。根因有三处：
+  1. 侧栏 CSS 的 collapsed 触发按钮规则写错：`body.collapsed.trigger` 应为 `body.collapsed .trigger`，且 `.trigger { display: none; }` 被放在 collapsed 规则**之后**，导致折叠状态下面板和触发按钮同时不可见 → 整条空白。已修正顺序与选择器。
+  2. 鼠标移出侧栏会自动折叠，并把 `collapsed=true` 写入 `localStorage`；下次启动直接恢复为折叠 → 空白。现在折叠状态**不再持久化**（仅内存中的悬停状态），启动时还会清理旧版本留下的该键。
+  3. 空 Space 列表分支提前 `return`，未调用 `renderChrome()`，导致折叠 class 状态未应用。已修复。
+- 侧栏样式系统性修复：`.row.caret`、`.row.avatar`、`.tab.t-icon`、`.modal.actions` 等 20+ 处误写的复合选择器改为真正的后代选择器，Space 行/标签页/弹窗样式恢复正常。
+- **错误现在一定可见**：侧栏新增内联错误横幅，RPC 失败、root 不可读/不是目录等情况会在侧栏直接显示标题与详情，而不是留下空白黑条；成功刷新后自动清除。
+
+### 测试
+- 新增 `spacesRoot` 单测 19 项（路径归一化、UNC/盘符、扫描规则、root 边界）。
+- 新增 `spacesState` 单测 13 项（序列化往返、损坏/版本/无效条目/重复路径容错）。
+- `spacesModel` 增补持久化 id 恢复测试。
+- `SpacesViewService` 增补 6 项（持久化状态探测、模式恢复、空状态回退、root 扫描、已存在去重、root 不可读不抛错）；该文件共 23 项全部通过。
+
+---
+
 ## [1.143.14] - 2026-11-08
 
 ### 修复

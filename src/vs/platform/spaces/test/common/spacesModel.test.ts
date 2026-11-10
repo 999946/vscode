@@ -241,4 +241,19 @@ suite('SpacesModel', () => {
 
 		assert.strictEqual(changes, 4);
 	});
+
+	test('add restores a persisted id when provided', () => {
+		const model = createModel();
+		const restored = model.add({ windowId: 5, workspace: folderA, id: 'persisted-space-id' });
+		assert.strictEqual(restored.id, 'persisted-space-id');
+		assert.strictEqual(model.getSpace('persisted-space-id')?.windowId, 5);
+	});
+
+	test('add keeps generating ids when none is provided', () => {
+		const model = createModel();
+		const a = model.add({ windowId: 1, workspace: folderA });
+		const b = model.add({ windowId: 2 });
+		assert.strictEqual(a.id, 'space-1');
+		assert.strictEqual(b.id, 'space-2');
+	});
 });

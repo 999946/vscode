@@ -63,6 +63,7 @@ export type SpacesSidebarRpcMethod =
 	| 'createEmptySpace'
 	| 'createSpace'
 	| 'openFolderAsSpace'
+	| 'pickSpacesRoot'
 	| 'switchToSpace'
 	| 'closeSpace'
 	| 'deleteSpace'
@@ -88,4 +89,9 @@ export interface ISpacesSidebarSpace {
 
 export interface ISpacesSidebarData {
 	readonly spaces: ISpacesSidebarSpace[];
+	/**
+	 * Non-fatal failure to surface inline (e.g. the Spaces root cannot be
+	 * read). The sidebar renders it as a banner and keeps showing the list.
+	 */
+	readonly error?: string;
 }

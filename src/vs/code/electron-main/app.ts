@@ -1592,6 +1592,28 @@ export class CodeApplication extends Disposable {
 		const context = isLaunchedFromCli(process.env) ? OpenContext.CLI : OpenContext.DESKTOP;
 		const args = this.environmentMainService.args;
 
+		// Restore the previous Spaces session when the app is started without
+		// explicit file/folder/agents arguments or a protocol link. A Spaces
+		// state means the user is in Spaces mode: show the shared frame and
+		// every Space again instead of a regular window.
+		const macOpenFiles: string[] = (global as { macOpenFiles?: string[] }).macOpenFiles ?? [];
+		const shouldRestoreSpaces =
+			!args['agents'] &&
+			!args._.length &&
+			!args['folder-uri'] &&
+			!args['file-uri'] &&
+			!args['new-window'] &&
+			!initialProtocolUrls &&
+			macOpenFiles.length === 0;
+		const spacesViewService = accessor.get(ISpacesViewService);
+		if (shouldRestoreSpaces && spacesViewService.hasPersistedState()) {
+			const restored = await spacesViewService.restorePersistedState();
+			if (restored) {
+				this.logService.info('app#openFirstWindow: restored Spaces mode');
+				return [];
+			}
+		}
+
 		// Handle agents window first based on context
 		if (args['agents']) {
 			return windowsMainService.openAgentsWindow({
@@ -1663,7 +1685,6 @@ export class CodeApplication extends Disposable {
 			}
 		}
 
-		const macOpenFiles: string[] = (global as { macOpenFiles?: string[] }).macOpenFiles ?? [];
 		const hasCliArgs = args._.length;
 		const hasFolderURIs = !!args['folder-uri'];
 		const hasFileURIs = !!args['file-uri'];

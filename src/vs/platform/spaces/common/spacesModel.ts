@@ -12,6 +12,11 @@ import { getDefaultSpaceName, ISpace, ISpacesSnapshot, ISpaceWorkspace } from '.
 export interface ISpaceInit {
 	readonly windowId: number;
 	readonly workspace?: ISpaceWorkspace;
+	/**
+	 * Restores a Space under its original id so persisted tab state keeps
+	 * matching across launches. Omit to generate a fresh id.
+	 */
+	readonly id?: string;
 }
 
 export interface ISpaceActivation {
@@ -90,7 +95,7 @@ export class SpacesModel extends Disposable {
 		}
 
 		const space: IMutableSpace = {
-			id: this.idFactory(),
+			id: init.id ?? this.idFactory(),
 			windowId: init.windowId,
 			createdAt: this.now(),
 			emptyIndex: init.workspace ? 0 : ++this.emptySpaceCounter,

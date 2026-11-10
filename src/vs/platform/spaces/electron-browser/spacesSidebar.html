@@ -130,7 +130,7 @@ button:hover { background: rgba(128, 128, 128, 0.25); color: var(--fg, #cccccc);
 	flex: 0 0 auto; width: 100%; padding: 10px 0;
 	display: flex; align-items: center; justify-content: center;
 }
-			.trigger.avatar {
+.trigger .avatar {
 	flex: 0 0 24px; width: 24px; height: 24px; border-radius: 5px;
 	display: flex; align-items: center; justify-content: center;
 	font-size: 12px; font-weight: 600;
@@ -138,8 +138,27 @@ button:hover { background: rgba(128, 128, 128, 0.25); color: var(--fg, #cccccc);
 }
 #panel.panel { display: flex; flex-direction: column; height: 100%; }
 body.collapsed #panel { display: none; }
-body.collapsed.trigger { display: flex; }
-			.trigger { display: none; }
+/* The trigger is only visible while the panel is collapsed. Keep this rule
+	AFTER the base `.trigger { display: none; }` rule: the collapsed trigger
+	used to be permanently hidden because a later `display:none` overrode it,
+	which left the whole 280px strip blank. */
+.trigger { display: none; }
+body.collapsed .trigger { display: flex; }
+
+/* Inline error banner: any failure must be visible in the sidebar instead of
+	leaving an empty (black) strip. */
+.error-banner {
+	flex: 0 0 auto; margin: 6px; padding: 6px 8px; border-radius: 4px;
+	background: rgba(196, 43, 28, 0.25); border: 1px solid rgba(241, 76, 76, 0.6);
+	color: var(--fg, #ffffff); font-size: 11px; line-height: 1.45;
+	word-break: break-word; white-space: pre-wrap; user-select: text;
+}
+.error-banner .error-title { font-weight: 600; display: block; margin-bottom: 2px; }
+.error-banner .error-detail { color: var(--muted, #dddddd); font-family: ui-monospace, monospace; font-size: 10.5px; }
+.root-hint {
+	flex: 0 0 auto; padding: 4px 10px 0; font-size: 10.5px; color: var(--muted, #969696);
+	white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 </style>
 	</head>
 	<body>
@@ -152,9 +171,12 @@ body.collapsed.trigger { display: flex; }
 						<button class="icon-btn" id="pinBtn" title="Pin spaces open"> P </button>
 							<button class="icon-btn" id="collapseBtn" title="Collapse spaces"> -</button>
 								</div>
+								<div id="errorBanner"></div>
 								<div class="list" id="list"> </div>
+									<div class="root-hint" id="rootHint" style="display: none"></div>
 									<div class="footer">
 										<button id="newBtn"> +  New Space </button>
+										<button id="rootBtn" title="Choose the folder whose sub-folders become Spaces"> &#9881;  Set Spaces Root… </button>
 											</div>
 											<div class="resize" id="resizeHandle"> </div>
 												</div>

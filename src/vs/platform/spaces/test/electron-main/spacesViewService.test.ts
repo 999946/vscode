@@ -4,6 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import { join } from '../../../../base/common/path.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
@@ -17,6 +20,7 @@ import { ISpace, ISpacesSnapshot, SpaceOperationResult, SPACES_NEW_TAB_CHANNEL }
 import { ISpacesFrameProvider, SpacesViewService } from '../../electron-main/spacesViewService.js';
 import { IConfigurationService } from '../../../configuration/common/configuration.js';
 import { IFileService } from '../../../files/common/files.js';
+import { IEnvironmentMainService } from '../../../environment/electron-main/environmentMainService.js';
 import { IApplicationStorageMainService } from '../../../storage/electron-main/storageMainService.js';
 
 /**
@@ -110,21 +114,37 @@ class FakeWindowsMainService implements Pick<IWindowsMainService, 'createWorkben
 	}
 }
 
-function makeConfigService(): IConfigurationService {
+function makeConfigService(values: Record<string, unknown> = {}): IConfigurationService {
 	return {
 		_serviceBrand: undefined,
-		getValue: (key?: string) => key === 'spaces.root' ? null : false,
-		updateValue: async () => { }
+		getValue: (key?: string) => {
+			if (key && Object.hasOwn(values, key)) {
+				return values[key];
+			}
+			return key === 'spaces.root' ? null : false;
+		},
+		updateValue: async () => { },
+		onDidChangeConfiguration: (listener: () => void) => {
+			// Config-change listeners are not exercised by these tests.
+			return { dispose: () => { } };
+		}
 	} as unknown as IConfigurationService;
 }
 
 function makeFileService(): IFileService {
-	return {
+	/** Overridden per test to simulate folders under the Spaces root. */
+	let resolveImplementation: ((r: import('../../../../base/common/uri.js').URI) => Promise<unknown>) | undefined;
+	const svc = {
 		_serviceBrand: undefined,
 		createFolder: async () => ({}) as never,
 		del: async () => { },
-		readdir: async () => []
-	} as unknown as IFileService;
+		readdir: async () => [],
+		resolve: (r: import('../../../../base/common/uri.js').URI) => resolveImplementation
+			? resolveImplementation(r)
+			: Promise.reject(new Error(`No resolve implementation for ${r.fsPath} (set it in the test)`))
+	} as unknown as IFileService & { __setResolve: (fn: (r: import('../../../../base/common/uri.js').URI) => Promise<unknown>) => void };
+	(svc as unknown as { __setResolve: (fn: (r: import('../../../../base/common/uri.js').URI) => Promise<unknown>) => void }).__setResolve = (fn) => { resolveImplementation = fn; };
+	return svc as IFileService;
 }
 
 function makeAppStorageService(): IApplicationStorageMainService {
@@ -155,7 +175,10 @@ suite('SpacesViewService', () => {
 	let service: SpacesViewService;
 	let changes: ISpacesSnapshot[];
 
-	function makeService(): SpacesViewService {
+	function makeService(userDataPath = join(os.tmpdir(), 'spaces-test-data')): SpacesViewService {
+		if (!fs.existsSync(userDataPath)) {
+			fs.mkdirSync(userDataPath, { recursive: true });
+		}
 		const svc = store.add(new SpacesViewService(
 			windowsMainService as unknown as IWindowsMainService,
 			lifecycleMainService as unknown as ILifecycleMainService,
@@ -164,7 +187,8 @@ suite('SpacesViewService', () => {
 			new NullLogService(),
 			makeConfigService(),
 			makeFileService(),
-			makeAppStorageService()
+			makeAppStorageService(),
+			{ userDataPath } as IEnvironmentMainService
 		));
 		store.add(svc.onDidChangeSpaces(snapshot => changes.push(snapshot)));
 		return svc;
@@ -400,6 +424,115 @@ suite('SpacesViewService', () => {
 		await service.sendToSpace(undefined, spaceA.id, SPACES_NEW_TAB_CHANNEL);
 		assert.strictEqual(messages.length, 1);
 		assert.strictEqual(messages[0].channel, SPACES_NEW_TAB_CHANNEL);
+	});
+
+	test('hasPersistedState is false before any Space exists and true after creating one', async () => {
+		const dataPath = join(os.tmpdir(), `spaces-state-${Date.now()}-${Math.random()}`);
+		const svc = makeService(dataPath);
+		assert.strictEqual(svc.hasPersistedState(), false);
+
+		await svc.createEmptySpace(undefined);
+		assert.strictEqual(svc.hasPersistedState(), true);
+	});
+
+	test('restorePersistedState recreates Spaces with their ids and the active one', async () => {
+		const dataPath = join(os.tmpdir(), `spaces-state-${Date.now()}-${Math.random()}`);
+		const svc = makeService(dataPath);
+
+		await svc.openFolderAsSpace(undefined, URI.file('/work/project-a'));
+		const hostA = [...windowsMainService.hosts.values()][0]!;
+		const spaceA = (await svc.getSpaces(undefined)).spaces.find(s => s.windowId === hostA.id)!;
+		assert.ok(spaceA, 'first Space exists');
+
+		await svc.createEmptySpace(undefined);
+		const spaceB = (await svc.getSpaces(undefined)).spaces.find(s => s.id !== spaceA.id)!;
+		await svc.switchToSpace(undefined, spaceB.id);
+
+		// "Restart": a fresh service with the same user data directory.
+		const restarted = makeService(dataPath);
+		assert.strictEqual(restarted.hasPersistedState(), true);
+		const restored = await restarted.restorePersistedState();
+		assert.strictEqual(restored, true);
+
+		const snapshot = await restarted.getSpaces(undefined);
+		assert.strictEqual(snapshot.spaces.length, 2);
+		assert.ok(snapshot.spaces.some(s => s.id === spaceA.id), 'Space A id is restored');
+		assert.ok(snapshot.spaces.some(s => s.id === spaceB.id), 'Space B id is restored');
+		assert.strictEqual(snapshot.activeSpaceId, spaceB.id, 'the previously active Space stays active');
+	});
+
+	test('restorePersistedState with an empty or missing state returns false', async () => {
+		const dataPath = join(os.tmpdir(), `spaces-state-${Date.now()}-${Math.random()}`);
+		const svc = makeService(dataPath);
+		assert.strictEqual(await svc.restorePersistedState(), false);
+
+		// A state file with zero Spaces is also not restorable.
+		fs.writeFileSync(join(dataPath, 'spaces-state.json'), JSON.stringify({ version: 1, spaces: [] }), 'utf8');
+		assert.strictEqual(svc.hasPersistedState(), false);
+		assert.strictEqual(await svc.restorePersistedState(), false);
+	});
+
+	test('scanSpacesRoot adds every first-level sub-folder of the root as a Space', async () => {
+		const svc = makeService();
+		const fileService = (svc as unknown as { fileService: IFileService }).fileService as IFileService & { __setResolve: (fn: (r: import('../../../../base/common/uri.js').URI) => Promise<unknown>) => void };
+		fileService.__setResolve(async (r) => {
+			const children = [
+				{ resource: URI.file('/spaces-root/alpha'), isDirectory: true, isSymbolicLink: false, children: undefined },
+				{ resource: URI.file('/spaces-root/beta'), isDirectory: true, isSymbolicLink: false, children: undefined },
+				{ resource: URI.file('/spaces-root/notes.md'), isDirectory: false, isSymbolicLink: false, children: undefined },
+				{ resource: URI.file('/spaces-root/.hidden'), isDirectory: true, isSymbolicLink: false, children: undefined }
+			];
+			return { isDirectory: true, children };
+		});
+		const configService = (svc as unknown as { configurationService: IConfigurationService }).configurationService as { getValue: (k?: string) => unknown };
+		configService.getValue = (key?: string) => key === 'spaces.root' ? '/spaces-root' : false;
+
+		await svc.scanSpacesRoot();
+
+		const snapshot = await svc.getSpaces(undefined);
+		assert.deepStrictEqual(snapshot.spaces.map(s => s.workspace?.uri.fsPath).sort(), ['/spaces-root/alpha', '/spaces-root/beta']);
+		assert.strictEqual(snapshot.spaces.filter(s => s.state === 'active').length, 1, 'exactly one Space is active');
+	});
+
+	test('scanSpacesRoot skips folders that are already open as a Space', async () => {
+		const svc = makeService();
+		const fileService = (svc as unknown as { fileService: IFileService }).fileService as IFileService & { __setResolve: (fn: (r: import('../../../../base/common/uri.js').URI) => Promise<unknown>) => void };
+		const configService = (svc as unknown as { configurationService: IConfigurationService }).configurationService as { getValue: (k?: string) => unknown };
+		configService.getValue = (key?: string) => key === 'spaces.root' ? '/spaces-root' : false;
+
+		// alpha is already open as a Space.
+		await svc.openFolderAsSpace(undefined, URI.file('/spaces-root/alpha'));
+
+		fileService.__setResolve(async () => {
+			return {
+				isDirectory: true,
+				children: [
+					{ resource: URI.file('/spaces-root/alpha'), isDirectory: true, isSymbolicLink: false, children: undefined },
+					{ resource: URI.file('/spaces-root/beta'), isDirectory: true, isSymbolicLink: false, children: undefined }
+				]
+			};
+		});
+
+		await svc.scanSpacesRoot();
+
+		const snapshot = await svc.getSpaces(undefined);
+		assert.deepStrictEqual(snapshot.spaces.map(s => s.workspace?.uri.fsPath).sort(), ['/spaces-root/alpha', '/spaces-root/beta']);
+	});
+
+	test('scanSpacesRoot with an unreadable root keeps existing Spaces and does not throw', async () => {
+		const svc = makeService();
+		const fileService = (svc as unknown as { fileService: IFileService }).fileService as IFileService & { __setResolve: (fn: (r: import('../../../../base/common/uri.js').URI) => Promise<unknown>) => void };
+		const configService = (svc as unknown as { configurationService: IConfigurationService }).configurationService as { getValue: (k?: string) => unknown };
+		configService.getValue = (key?: string) => key === 'spaces.root' ? '/missing-root' : false;
+		fileService.__setResolve(async () => Promise.reject(new Error('ENOENT: no such file')));
+
+		await svc.openFolderAsSpace(undefined, URI.file('/work/existing'));
+
+		await svc.scanSpacesRoot(); // must not reject
+
+		const snapshot = await svc.getSpaces(undefined);
+		assert.strictEqual(snapshot.spaces.length, 1);
+		assert.strictEqual(snapshot.spaces[0].workspace?.uri.fsPath, '/work/existing');
 	});
 
 	test('createSpace creates a folder under the configured spaces root', async () => {
