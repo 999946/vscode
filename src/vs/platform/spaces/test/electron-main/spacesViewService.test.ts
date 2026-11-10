@@ -548,4 +548,56 @@ suite('SpacesViewService', () => {
 		assert.strictEqual(created.length, 1);
 	});
 
+	test('creating the first Space auto-scans the configured spaces root (Terax spaces.root)', async () => {
+		const dataPath = join(os.tmpdir(), `spaces-state-${Date.now()}-${Math.random()}`);
+		const svc = makeService(dataPath);
+		const configService = (svc as unknown as { configurationService: IConfigurationService }).configurationService as { getValue: (k?: string) => unknown };
+		configService.getValue = (key?: string) => key === 'spaces.root' ? '/spaces-root' : false;
+		const fileService = (svc as unknown as { fileService: IFileService }).fileService as IFileService & { __setResolve: (fn: (r: import('../../../../base/common/uri.js').URI) => Promise<unknown>) => void };
+		fileService.__setResolve(async () => ({
+			isDirectory: true,
+			children: [
+				{ resource: URI.file('/spaces-root/alpha'), isDirectory: true, isSymbolicLink: false, children: undefined },
+				{ resource: URI.file('/spaces-root/beta'), isDirectory: true, isSymbolicLink: false, children: undefined }
+			]
+		}));
+
+		await svc.createEmptySpace(undefined);
+
+		// The auto-scan is fire-and-forget; wait until both root folders have
+		// been materialised as Spaces.
+		const start = Date.now();
+		while ((await svc.getSpaces(undefined)).spaces.length < 3) {
+			if (Date.now() - start > 3000) {
+				throw new Error('timed out waiting for the auto-scanned root folders');
+			}
+			await new Promise(resolve => setTimeout(resolve, 10));
+		}
+
+		const snapshot = await svc.getSpaces(undefined);
+		const rootPaths = snapshot.spaces.map(s => s.workspace?.uri.fsPath).filter((p): p is string => !!p).sort();
+		assert.deepStrictEqual(rootPaths, ['/spaces-root/alpha', '/spaces-root/beta']);
+		assert.strictEqual(snapshot.spaces.filter(s => s.workspace === undefined).length, 1, 'the empty Space is kept');
+	});
+
+	test('creating further Spaces does not re-scan the configured spaces root', async () => {
+		const dataPath = join(os.tmpdir(), `spaces-state-${Date.now()}-${Math.random()}`);
+		const svc = makeService(dataPath);
+		const configService = (svc as unknown as { configurationService: IConfigurationService }).configurationService as { getValue: (k?: string) => unknown };
+		configService.getValue = (key?: string) => key === 'spaces.root' ? '/spaces-root' : false;
+		const fileService = (svc as unknown as { fileService: IFileService }).fileService as IFileService & { __setResolve: (fn: (r: import('../../../../base/common/uri.js').URI) => Promise<unknown>) => void };
+		let resolveCalls = 0;
+		fileService.__setResolve(async () => {
+			resolveCalls++;
+			return { isDirectory: true, children: [] };
+		});
+
+		await svc.createEmptySpace(undefined);
+		await svc.createEmptySpace(undefined);
+		await new Promise(resolve => setTimeout(resolve, 50));
+
+		assert.strictEqual(resolveCalls, 1, 'only the first Space triggers a root scan');
+		assert.strictEqual((await svc.getSpaces(undefined)).spaces.length, 2);
+	});
+
 });

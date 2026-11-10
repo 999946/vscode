@@ -114,6 +114,9 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 	/** Guards against overlapping root scans (config change + explicit scan). */
 	private scanPromise: Promise<void> | undefined;
 
+	/** Set while a root scan is executing, to prevent nested scans. */
+	private scanningRoot = false;
+
 	private readonly _onDidChangeSpaces = this._register(new Emitter<ISpacesSnapshot>());
 	readonly onDidChangeSpaces = this._onDidChangeSpaces.event;
 
@@ -402,7 +405,26 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		this.registerHostListeners(host, space.id);
 		this.logService.info(`[spaces:view] added Space '${space.name}' (${space.id}) as view host ${host.id}`);
 
+		// Entering Spaces mode for the first time must also materialise every
+		// first-level sub-folder of `spaces.root` as a Space. Restores skip this
+		// here; `restorePersistedState` scans once after all Spaces are back.
+		this.maybeAutoScanSpacesRoot();
+
 		return this.activate(space.id);
+	}
+
+	/**
+	 * When the very first Space is created outside of a state restore, keep the
+	 * list in sync with the configured `spaces.root` right away. Checks `size`
+	 * after the Space has been added so the freshly created Space itself is
+	 * skipped by the scan, and `restoring` so the restore path does not scan
+	 * twice.
+	 */
+	private maybeAutoScanSpacesRoot(): void {
+		if (this.restoring || this.model.size !== 1) {
+			return;
+		}
+		void this.scanSpacesRoot();
 	}
 
 	private registerHostListeners(host: IWorkbenchHost, spaceId: string): void {
@@ -643,6 +665,18 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 	}
 
 	private async doScanSpacesRoot(): Promise<void> {
+		if (this.scanningRoot) {
+			return;
+		}
+		this.scanningRoot = true;
+		try {
+			await this.doScanSpacesRootCore();
+		} finally {
+			this.scanningRoot = false;
+		}
+	}
+
+	private async doScanSpacesRootCore(): Promise<void> {
 		const spacesRoot = this.configurationService.getValue<string>(SPACES_ROOT_SETTING);
 		const root = trimRootPath(spacesRoot ?? '');
 		if (!root) {
@@ -695,6 +729,7 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		// the next model change does not lose the scan result.
 		this.persistState();
 	}
+
 
 	private isCaseInsensitiveFs(): boolean {
 		return isMacintosh || isWindows;

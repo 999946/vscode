@@ -5,6 +5,25 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 发布新版本前，**必须先在顶部添加对应版本的 section**，否则 workflow 会失败。
 
+## [1.143.16] - 2026-11-11
+
+### 修复
+- **修复新建多个 Space 后左侧 Spaces 列表完全空白**。根因是侧栏样式表里把「类名后代」写成了「同一元素上的两个类」的复合选择器（如 `.row.name` 实际元素只有 `name` 类，`row` 在父元素上），导致 Space 名称、头像、徽标、标签页、弹窗按钮等关键样式全部失效，行元素失去尺寸与文字颜色 → 侧栏一片空白。
+  - 已把 21 处错误复合选择器改为真正的后代选择器：`.row .name`、`.row .avatar`、`.row .badge`、`.row .main`、`.row .caret`、`.row .workspace`、`.tab .t-icon`、`.tab .t-main`、`.tab .t-label`、`.tab .t-detail`、`.tab .t-close`、`.modal .actions`、`.header .title`、`.header .icon-btn` 等。
+  - 用 Playwright 对真实侧栏 HTML + 编译产物做回归验证：修复前行高 40px、名称字重 400（样式未命中），修复后行高 35px、名称字重 500，两个 Space 的名称与工作区路径均正确渲染。
+
+### 新功能
+- **首次进入 Spaces 模式时自动同步 `spaces.root`（对齐 Terax）**。之前只有「启动恢复」「修改 root 设置」「手动选择 root」三种情况才扫描 root；现在创**第一个** Space 进入 Spaces 模式时会立即扫描 root，把其中每个一级子文件夹补成一个 Space。
+  - 后续新建的 Space 不会重复扫描，避免列表被反复刷新。
+  - 恢复 Spaces 模式时不重复扫描：`restorePersistedState` 在全部 Space 恢复完成后统一扫描一次。
+  - 扫描可重入保护：扫描过程中创建的 Space 不会触发嵌套扫描。
+
+### 测试
+- `SpacesViewService` 新增 2 项单测：首次创建 Space 自动扫描 root 并补齐子目录为 Space；继续新建 Space 时不再重复扫描。
+- 该文件共 25 项全部通过；`spacesRoot` 19 项、`spacesState` 13 项、`spacesModel` 17 项单测也全部通过。
+
+---
+
 ## [1.143.15] - 2026-11-10
 
 ### 新功能
