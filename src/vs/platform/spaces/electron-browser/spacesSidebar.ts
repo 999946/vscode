@@ -6,6 +6,7 @@
 /* eslint-disable no-restricted-syntax */
 
 import type { ISpacesSidebarData, ISpacesSidebarSpace, ISpacesSidebarTab, ISpacesSidebarSettings } from '../common/spacesSidebarRpc.js';
+import { spaceAccentFor, spaceInitial } from '../common/spaceColor.js';
 
 /**
  * Renderer entry point for the shared Spaces sidebar view.
@@ -131,8 +132,10 @@ function renderChrome(): void {
 	const active = data.spaces.find(s => s.isCurrent);
 	if (settings.showSpaceInitials && active) {
 		triggerAvatar.textContent = spaceInitial(active.name);
+		triggerAvatar.style.setProperty('--accent', spaceAccentFor(active.id));
 	} else {
 		triggerAvatar.textContent = 'S';
+		triggerAvatar.style.removeProperty('--accent');
 	}
 
 	if (collapsed) {
@@ -167,9 +170,18 @@ function clearError(): void {
 	errorBanner.textContent = '';
 }
 
-function spaceInitial(name: string): string {
-	const ch = name.trim()[0];
-	return ch ? ch.toUpperCase() : '?';
+/** Human label for a Space's last activation, e.g. "just now" / "5m ago". */
+function lastActiveLabel(timestamp: number): string {
+	if (!timestamp) { return 'never active'; }
+	const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+	if (seconds < 5) { return 'just now'; }
+	if (seconds < 60) { return `${seconds}s ago`; }
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) { return `${minutes}m ago`; }
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) { return `${hours}h ago`; }
+	const days = Math.floor(hours / 24);
+	return `${days}d ago`;
 }
 
 function expand(): void {
@@ -205,6 +217,8 @@ function createRow(space: ISpacesSidebarSpace): HTMLDivElement {
 	row.setAttribute('role', 'button');
 	row.tabIndex = 0;
 	row.dataset.spaceId = space.id;
+	// Accent is set on the row so the active accent bar / hover tint can read it.
+	row.style.setProperty('--accent', spaceAccentFor(space.id));
 
 	if (settings.showSpaceTabs) {
 		const caret = document.createElement('span');
@@ -213,10 +227,20 @@ function createRow(space: ISpacesSidebarSpace): HTMLDivElement {
 		row.appendChild(caret);
 	}
 
+	// Status dot: visible status for inactive Spaces (Terax space status),
+	// while the active Space's dot is drawn by the row accent bar instead.
+	if (!space.isCurrent) {
+		const dot = document.createElement('span');
+		dot.className = 'status-dot';
+		dot.title = space.needsAttention ? 'Space needs attention' : 'Space is running';
+		row.appendChild(dot);
+	}
+
 	if (settings.showSpaceInitials) {
 		const avatar = document.createElement('span');
 		avatar.className = 'avatar';
 		avatar.textContent = spaceInitial(space.name);
+		avatar.style.setProperty('--accent', spaceAccentFor(space.id));
 		row.appendChild(avatar);
 	}
 
@@ -232,6 +256,11 @@ function createRow(space: ISpacesSidebarSpace): HTMLDivElement {
 		ws.textContent = space.workspaceLabel;
 		main.appendChild(ws);
 	}
+	// Terax-style summary line: lightweight lifecycle info from the main process.
+	const meta = document.createElement('div');
+	meta.className = 'meta';
+	meta.textContent = space.isCurrent ? 'active now' : `last active ${lastActiveLabel(space.lastActiveAt)}`;
+	main.appendChild(meta);
 	row.appendChild(main);
 
 	const badge = document.createElement('span');
@@ -302,12 +331,17 @@ function render(): void {
 	if (data.spaces.length === 0) {
 		const empty = document.createElement('div');
 		empty.className = 'empty';
-
+		const title = document.createElement('div');
+		title.className = 'empty-title';
 		if (settings.spacesRoot) {
-			empty.textContent = 'No Spaces yet. Create one to get started.';
+			title.textContent = 'No Spaces yet';
+			empty.appendChild(title);
+			empty.appendChild(textNode('Create a Space to get started. It will be created as a folder under your Spaces root.'));
 			appendButton(empty, 'Create a Space', () => showNewSpaceDialog());
 		} else {
-			empty.textContent = 'No Spaces yet. Set your Spaces root folder to get started.';
+			title.textContent = 'Welcome to Spaces';
+			empty.appendChild(title);
+			empty.appendChild(textNode('Set your Spaces root folder, and every sub-folder becomes a Space.'));
 			appendButton(empty, 'Configure Spaces Root…', () => {
 				void window.spacesSidebar.invoke('openSettings');
 			});
@@ -335,6 +369,10 @@ function render(): void {
 	}
 
 	renderChrome();
+}
+
+function textNode(text: string): Text {
+	return document.createTextNode(text);
 }
 
 function appendButton(container: HTMLElement, label: string, onClick: () => void): void {

@@ -580,6 +580,82 @@ suite('SpacesViewService', () => {
 		assert.strictEqual(snapshot.spaces.filter(s => s.workspace === undefined).length, 1, 'the empty Space is kept');
 	});
 
+	test('lifecycle: app.started fires on service construction', () => {
+		const kinds = service.getLifecycleEvents().map(e => e.kind);
+		assert.ok(kinds.includes('app.started'));
+	});
+
+	test('lifecycle: creating the first Space fires spaces.loaded then space.activated', async () => {
+		const before = service.getLifecycleEvents().length;
+		await service.createEmptySpace(undefined);
+
+		const events = service.getLifecycleEvents().slice(before);
+		const kinds = events.map(e => e.kind);
+		assert.ok(kinds.includes('spaces.loaded'), `expected spaces.loaded, got ${kinds.join(', ')}`);
+		assert.ok(kinds.includes('spaces.changed'));
+		assert.strictEqual(kinds.filter(k => k === 'space.activated').length, 1);
+		assert.strictEqual(events.find(e => e.kind === 'space.activated')?.space?.id, (await service.getSpaces(undefined)).spaces[0].id);
+	});
+
+	test('lifecycle: switching Spaces emits deactivated + activated for the real switch', async () => {
+		const { a, b } = await createTwoSpaces();
+		const spaceA = await spaceOf(a.id);
+		const spaceB = await spaceOf(b.id);
+		const before = service.getLifecycleEvents().length;
+
+		await service.switchToSpace(undefined, spaceA.id);
+
+		const events = service.getLifecycleEvents().slice(before).filter(e => e.kind === 'space.deactivated' || e.kind === 'space.activated');
+		assert.deepStrictEqual(events.map(e => e.kind), ['space.deactivated', 'space.activated']);
+		assert.strictEqual(events[0].spaceId, spaceB.id, 'deactivated is the previously active');
+		assert.strictEqual(events[1].spaceId, spaceA.id, 'activated is the newly active');
+	});
+
+	test('lifecycle: activating the already-active Space is idempotent', async () => {
+		const { a } = await createTwoSpaces();
+		const spaceA = await spaceOf(a.id);
+		// A is inactive now (B was created last). Switch to A once.
+		await service.switchToSpace(undefined, spaceA.id);
+		const after = service.getLifecycleEvents().length;
+
+		await service.switchToSpace(undefined, spaceA.id);
+		assert.strictEqual(service.getLifecycleEvents().length, after, 're-activating the active Space emits nothing');
+	});
+
+	test('lifecycle: closing a Space fires spaces.changed and activates the next Space', async () => {
+		const { a, b } = await createTwoSpaces();
+		const spaceA = await spaceOf(a.id);
+		const spaceB = await spaceOf(b.id);
+		const before = service.getLifecycleEvents().length;
+
+		await service.closeSpace(undefined, spaceB.id);
+
+		const events = service.getLifecycleEvents().slice(before);
+		const kinds = events.map(e => e.kind);
+		assert.ok(kinds.includes('spaces.changed'));
+		// Closing the active Space activates the next one.
+		assert.ok(events.some(e => e.kind === 'space.activated' && e.spaceId === spaceA.id));
+	});
+
+	test('lifecycle: restoring the persisted state fires exactly one spaces.loaded', async () => {
+		const dataPath = join(os.tmpdir(), `spaces-state-${Date.now()}-${Math.random()}`);
+		const svc = makeService(dataPath);
+
+		await svc.openFolderAsSpace(undefined, URI.file('/work/project-a'));
+		const hostA = [...windowsMainService.hosts.values()][0]!;
+		const spaceA = (await svc.getSpaces(undefined)).spaces.find(s => s.windowId === hostA.id)!;
+		await svc.createEmptySpace(undefined);
+		const spaceB = (await svc.getSpaces(undefined)).spaces.find(s => s.id !== spaceA.id)!;
+		await svc.switchToSpace(undefined, spaceB.id);
+
+		const restarted = makeService(dataPath);
+		await restarted.restorePersistedState();
+
+		const loaded = restarted.getLifecycleEvents().filter(e => e.kind === 'spaces.loaded');
+		assert.strictEqual(loaded.length, 1, 'spaces.loaded fires exactly once after a restore');
+		assert.strictEqual(loaded[0]?.stateSnapshot.spaces.length, 2);
+	});
+
 	test('creating further Spaces does not re-scan the configured spaces root', async () => {
 		const dataPath = join(os.tmpdir(), `spaces-state-${Date.now()}-${Math.random()}`);
 		const svc = makeService(dataPath);

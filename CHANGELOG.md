@@ -5,7 +5,31 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 发布新版本前，**必须先在顶部添加对应版本的 section**，否则 workflow 会失败。
 
-## [1.143.16] - 2026-11-11
+## [1.143.17] - 2026-11-17
+
+### 新功能
+- **Spaces 生命周期事件总线（对齐 Terax 插件生命周期）**。在主进程新增 `SpacesLifecycleService`，按 Terax 语义派发 `app.started` / `spaces.loaded` / `spaces.changed` / `space.activated` / `space.deactivated` 事件：
+  - `spaces.loaded` 幂等：每次服务生命周期只派发一次（启动恢复完成后 / 首次进入 Spaces 模式时）。
+  - `spaces.changed` 按 Space 列表指纹去重，避免重复渲染刷屏。
+  - `space.activated`/`space.deactivated` 成对派发，切换空间时恰好一对；重复激活同一 Space 幂等。
+  - 主进程保留最近 50 条事件，侧栏可通过 RPC `getLifecycle` 查询 / 订阅 `onDidFireLifecycleEvent` 实时刷新。
+  - 新增 `SpaceInfo` 类型（summary / status / onlineAt / lastTestedAt）占位，为后续 Terax 风格插件回灌预留契约。
+- **Spaces 侧栏展示生命周期信息（阶段 A 展示层）**：每个 Space 行新增「上次激活」摘要行（`active now` / `last active 5m ago` / `never active`），底部数据随生命周期事件实时更新。
+
+### 样式优化
+- **per-Space accent 色**（对齐 Terax `SPACE_COLORS` 调色板）：8 色 oklch 色板，按 Space id 稳定哈希分配；头像背景 / active 行左侧色条 / 折叠触发器头像均使用该 Space 的 accent 色。`oklch()` + `color-mix()` 保证亮暗主题均可读。
+- **Space 行状态点**：非当前 Space 显示状态圆点（普通灰色 / 需关注琥珀色），当前 Space 用 accent 色条表达。
+- **空态引导**：无 Space 时显示「No Spaces yet / Welcome to Spaces」引导标题 + 主操作按钮，替代之前的单行提示。
+- **选中回归验证**：用 Playwright 加载真实编译产物做样式回归，杜绝再犯 `.row.name` 复合选择器 bug（18 个关键后代选择器逐一断言命中）。
+
+### 测试
+- 新增 `spacesLifecycle.test.ts`（9 项）：事件保序、`spaces.loaded` 幂等、`spaces.changed` 指纹去重、激活/去活配对、重复激活幂等、事件日志上限。
+- 新增 `spaceColor.test.ts`（5 项）：8 色色板、accent 索引确定性、`spaceInitial` 回退。
+- `spacesViewService.test.ts` 新增 6 项生命周期集成测试（首次创建 Space 派发电事件、切换/幂等/关闭配套事件、恢复后恰好一次 `spaces.loaded`）。
+- 全量单测绿：`spacesLifecycle` 9、`spaceColor` 5、`spacesModel` 17、`spacesRoot` 19、`spacesState` 13、`spacesViewService` 31，共 94 项。
+
+---
+
 
 ### 修复
 - **修复新建多个 Space 后左侧 Spaces 列表完全空白**。根因是侧栏样式表里把「类名后代」写成了「同一元素上的两个类」的复合选择器（如 `.row.name` 实际元素只有 `name` 类，`row` 在父元素上），导致 Space 名称、头像、徽标、标签页、弹窗按钮等关键样式全部失效，行元素失去尺寸与文字颜色 → 侧栏一片空白。

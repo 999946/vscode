@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import electron from 'electron';
-import { Emitter } from '../../../base/common/event.js';
+import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable, DisposableMap, DisposableStore } from '../../../base/common/lifecycle.js';
 import { AddFirstParameterToFunctions } from '../../../base/common/types.js';
 import { URI, UriComponents } from '../../../base/common/uri.js';
@@ -23,6 +23,7 @@ import { ISpaceTabState, emptySpaceTabState } from '../common/spacesTabs.js';
 import { buildSpacesState, fromPersistedWorkspace } from '../common/spacesState.js';
 import { isDirectChildOfRoot, joinRootFolder, pathKey, scanRootFolders, trimRootPath } from '../common/spacesRoot.js';
 import { SpacesTabStore } from './spacesTabStore.js';
+import { ISpacesLifecycleEvent, SpacesLifecycleService } from '../common/spacesLifecycle.js';
 import { SpacesStateStore } from './spacesStateStore.js';
 import { IWorkbenchHost } from '../../window/electron-main/workbenchHost.js';
 import { IWindowsMainService, defaultBrowserWindowOptions } from '../../windows/electron-main/windows.js';
@@ -49,6 +50,16 @@ export interface ISpacesViewService extends AddFirstParameterToFunctions<ICommon
 
 	/** Synchronises the Space list with the folders inside `spaces.root`. */
 	scanSpacesRoot(): Promise<void>;
+
+	/**
+	 * Fired for every Spaces lifecycle event (Terax-compatible)
+	 * `app.started`, `spaces.loaded`, `spaces.changed`, `space.activated`,
+	 * `space.deactivated`. Used by the shared sidebar to render activity.
+	 */
+	readonly onDidFireLifecycleEvent: Event<ISpacesLifecycleEvent>;
+
+	/** Most recent lifecycle events (oldest first), for late subscribers / diagnostics. */
+	getLifecycleEvents(): readonly ISpacesLifecycleEvent[];
 }
 
 /**
@@ -104,6 +115,14 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 
 	private readonly model = this._register(new SpacesModel());
 
+	private readonly lifecycle = this._register(new SpacesLifecycleService());
+
+	readonly onDidFireLifecycleEvent = this.lifecycle.onDidFireLifecycleEvent;
+
+	getLifecycleEvents(): readonly ISpacesLifecycleEvent[] {
+		return this.lifecycle.getLifecycleEvents();
+	}
+
 	private readonly tabStore: SpacesTabStore;
 
 	private readonly stateStore: SpacesStateStore;
@@ -149,9 +168,15 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		this.stateStore = new SpacesStateStore(environmentMainService, logService);
 
 		this._register(this.model.onDidChange(() => {
-			this._onDidChangeSpaces.fire(this.model.snapshot());
+			const snapshot = this.model.snapshot();
+			this._onDidChangeSpaces.fire(snapshot);
+			// Lifecycle (deduplicated by the Space-list footprint inside the service).
+			this.lifecycle.fireChanged(snapshot);
 			this.persistState();
 		}));
+
+		// `app.started`: the Spaces service is up.
+		this.lifecycle.fireAppStarted(this.model.snapshot());
 
 		// A changed `spaces.root` must be reflected in the Space list.
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
@@ -405,6 +430,13 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		this.registerHostListeners(host, space.id);
 		this.logService.info(`[spaces:view] added Space '${space.name}' (${space.id}) as view host ${host.id}`);
 
+		// On a normal boot (no persisted restore), entering Spaces mode for the
+		// first time is the "spaces loaded" hydration moment (Terax semantics);
+		// `loadedFired` guards against double-firing after a restore.
+		if (!this.restoring && this.model.size === 1) {
+			this.lifecycle.fireLoaded(this.model.snapshot());
+		}
+
 		// Entering Spaces mode for the first time must also materialise every
 		// first-level sub-folder of `spaces.root` as a Space. Restores skip this
 		// here; `restorePersistedState` scans once after all Spaces are back.
@@ -637,6 +669,10 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 
 		this.persistState();
 
+		// Lifecycle: exactly one `spaces.loaded` per service lifetime, after the
+		// restore pass completed (Terax fires it once after hydration).
+		this.lifecycle.fireLoaded(this.model.snapshot());
+
 		// Keep the Space list in sync with the folders under the root.
 		await this.scanSpacesRoot();
 
@@ -769,6 +805,10 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 				host.hide();
 			}
 		}
+
+		// Lifecycle: `space.deactivated` (previous) + `space.activated` (target),
+		// exactly once per real switch.
+		this.lifecycle.fireActivation(this.model.snapshot(), previous, this.model.getSpace(target.id));
 
 		return { result: SpaceOperationResult.Ok, space: this.model.getSpace(target.id) };
 	}

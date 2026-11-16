@@ -17,6 +17,7 @@ import { IThemeMainService } from '../../theme/electron-main/themeMainService.js
 import { SpaceOperationResult, ISpaceWorkspace, SPACES_NEW_TAB_CHANNEL, SPACES_CLOSE_TAB_CHANNEL, SPACES_OPEN_SETTINGS_CHANNEL } from '../common/spaces.js';
 import { ISpacesSettings } from '../common/spacesConfig.js';
 import { ISpacesSidebarData, ISpacesSidebarRpcRequest, ISpacesSidebarSpace, ISpacesSidebarTab, SpacesSidebarRpcMethod, SPACES_SIDEBAR_CHANGED_CHANNEL, SPACES_SIDEBAR_CHANNEL } from '../common/spacesSidebarRpc.js';
+import type { ISpacesLifecycleEvent } from '../common/spacesLifecycle.js';
 import type { ISerializedSpaceTab } from '../common/spacesTabs.js';
 import { SpacesErrorPageFallback } from './spacesErrorPage.js';
 import type { ISpacesViewService } from './spacesViewService.js';
@@ -75,6 +76,9 @@ export class SpacesSidebarHost extends Disposable {
 		});
 
 		this._register(this.spacesViewService.onDidChangeSpaces(() => this.pushChange()));
+		// Push lifecycle activity (Spaces running, last activation, ...) to the
+		// sidebar so the panel can render status without polling.
+		this._register(this.spacesViewService.onDidFireLifecycleEvent(() => this.pushChange()));
 
 		const sidebarUrl = FileAccess.asBrowserUri('vs/platform/spaces/electron-browser/spacesSidebar.html').toString(true);
 
@@ -172,6 +176,8 @@ export class SpacesSidebarHost extends Disposable {
 			case 'setSetting':
 				await this.spacesViewService.setSidebarSetting(undefined, args[0] as string, args[1]);
 				return this.toSidebarSettings();
+			case 'getLifecycle':
+				return this.spacesViewService.getLifecycleEvents();
 			case 'getSpaceTabs': {
 				const state = await this.spacesViewService.getSpaceTabs(undefined, args[0] as string);
 				return { tabs: state.tabs.map((t, i) => toSidebarTab(t, i === state.activeTabIndex)) };
@@ -264,9 +270,11 @@ export class SpacesSidebarHost extends Disposable {
 			state: space.state,
 			needsAttention: space.needsAttention,
 			isCurrent: space.id === activeId,
-			tabCount: tabCounts.get(space.id) ?? 0
+			tabCount: tabCounts.get(space.id) ?? 0,
+			lastActiveAt: space.lastActiveAt
 		}));
-		return this.pendingError ? { spaces, error: this.pendingError } : { spaces };
+		const lifecycle: ISpacesLifecycleEvent[] = [...this.spacesViewService.getLifecycleEvents()];
+		return this.pendingError ? { spaces, error: this.pendingError, lifecycle } : { spaces, lifecycle };
 	}
 }
 

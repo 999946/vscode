@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { UriComponents } from '../../../base/common/uri.js';
+import type { ISpacesLifecycleEvent } from './spacesLifecycle.js';
 
 /**
  * IPC contract between the shared Spaces sidebar view (a small standalone
@@ -69,6 +70,7 @@ export type SpacesSidebarRpcMethod =
 	| 'deleteSpace'
 	| 'renameSpace'
 	| 'getSpaceTabs'
+	| 'getLifecycle'
 	| 'newTabInSpace'
 	| 'closeTab'
 	| 'openSettings';
@@ -85,6 +87,15 @@ export interface ISpacesSidebarSpace {
 	readonly isCurrent: boolean;
 	/** Number of restored tabs of this Space (shown as a count badge). */
 	readonly tabCount: number;
+	/** ms epoch of the last time this Space was active (0 when never). */
+	readonly lastActiveAt: number;
+	/** Plugin-style status decoration (Terax `SpaceInfo`), when known. */
+	readonly info?: {
+		readonly summary: string;
+		readonly status: 'online' | 'offline' | 'degraded' | 'unknown';
+		readonly onlineAt: string | null;
+		readonly lastTestedAt: string | null;
+	};
 }
 
 export interface ISpacesSidebarData {
@@ -94,4 +105,6 @@ export interface ISpacesSidebarData {
 	 * read). The sidebar renders it as a banner and keeps showing the list.
 	 */
 	readonly error?: string;
+	/** Recent Spaces lifecycle events (oldest first) for the activity footer. */
+	readonly lifecycle?: readonly ISpacesLifecycleEvent[];
 }
