@@ -17,7 +17,7 @@ import { IThemeMainService } from '../../theme/electron-main/themeMainService.js
 import { SpaceOperationResult, ISpaceWorkspace, SPACES_NEW_TAB_CHANNEL, SPACES_CLOSE_TAB_CHANNEL, SPACES_OPEN_SETTINGS_CHANNEL } from '../common/spaces.js';
 import { ISpacesSettings } from '../common/spacesConfig.js';
 import { ISpacesSidebarData, ISpacesSidebarRpcRequest, ISpacesSidebarSpace, ISpacesSidebarTab, SpacesSidebarRpcMethod, SPACES_SIDEBAR_CHANGED_CHANNEL, SPACES_SIDEBAR_CHANNEL } from '../common/spacesSidebarRpc.js';
-import type { ISpacesLifecycleEvent } from '../common/spacesLifecycle.js';
+import type { ISpaceInfo, ISpacesLifecycleEvent } from '../common/spacesLifecycle.js';
 import type { ISerializedSpaceTab } from '../common/spacesTabs.js';
 import { SpacesErrorPageFallback } from './spacesErrorPage.js';
 import type { ISpacesViewService } from './spacesViewService.js';
@@ -257,6 +257,7 @@ export class SpacesSidebarHost extends Disposable {
 	private async toSidebarData(): Promise<ISpacesSidebarData> {
 		const snapshot = await this.spacesViewService.getSpaces(undefined);
 		const activeId = snapshot.activeSpaceId;
+		const scriptInfo = this.spacesViewService.getScriptsInfoBySpace() as ReadonlyMap<string, ISpaceInfo> | undefined;
 		const tabCounts = new Map<string, number>();
 		await Promise.all(snapshot.spaces.map(async space => {
 			const state = await this.spacesViewService.getSpaceTabs(undefined, space.id);
@@ -271,7 +272,8 @@ export class SpacesSidebarHost extends Disposable {
 			needsAttention: space.needsAttention,
 			isCurrent: space.id === activeId,
 			tabCount: tabCounts.get(space.id) ?? 0,
-			lastActiveAt: space.lastActiveAt
+			lastActiveAt: space.lastActiveAt,
+			info: scriptInfo?.get(space.id)
 		}));
 		const lifecycle: ISpacesLifecycleEvent[] = [...this.spacesViewService.getLifecycleEvents()];
 		return this.pendingError ? { spaces, error: this.pendingError, lifecycle } : { spaces, lifecycle };

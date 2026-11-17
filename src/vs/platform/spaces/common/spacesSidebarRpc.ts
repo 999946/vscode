@@ -36,10 +36,15 @@ export interface ISpacesSidebarSettings {
 	readonly showSpaceTabs: boolean;
 	/** Use the Space name's first letter as its avatar (Terax `showSpaceInitials`). */
 	readonly showSpaceInitials: boolean;
+	/**
+	 * Folder holding Terax-style user JS scripts that customise Space data.
+	 * Defaults to `~/git` when unset.
+	 */
+	readonly scriptsDir: string | null;
 }
 
 /** A mutable setting the sidebar can write back to the main process. */
-export type SpacesSidebarSettingKey = 'spacesRoot' | 'showSpaceTabs' | 'showSpaceInitials';
+export type SpacesSidebarSettingKey = 'spacesRoot' | 'scriptsDir' | 'showSpaceTabs' | 'showSpaceInitials';
 
 /** A serializable, restored tab shown inside an expanded Space row. */
 export interface ISpacesSidebarTab {

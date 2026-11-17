@@ -9,7 +9,8 @@ import { Disposable, DisposableMap, DisposableStore } from '../../../base/common
 import { AddFirstParameterToFunctions } from '../../../base/common/types.js';
 import { URI, UriComponents } from '../../../base/common/uri.js';
 import { toErrorMessage } from '../../../base/common/errorMessage.js';
-import { basename } from '../../../base/common/resources.js';
+import { basename, joinPath } from '../../../base/common/resources.js';
+import { homedir } from 'os';
 import { createDecorator, IInstantiationService } from '../../instantiation/common/instantiation.js';
 import { ILifecycleMainService } from '../../lifecycle/electron-main/lifecycleMainService.js';
 import { ILogService } from '../../log/common/log.js';
@@ -18,13 +19,15 @@ import { ConfigurationTarget, IConfigurationService } from '../../configuration/
 import { IApplicationStorageMainService } from '../../storage/electron-main/storageMainService.js';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
 import { isMacintosh, isWindows } from '../../../base/common/platform.js';
-import { ISpacesSettings, SPACES_ROOT_SETTING, SPACES_SHOW_INITIALS_SETTING, SPACES_SHOW_TABS_SETTING } from '../common/spacesConfig.js';
+import { ISpacesSettings, SPACES_ROOT_SETTING, SPACES_SCRIPTS_DIR_SETTING, SPACES_SHOW_INITIALS_SETTING, SPACES_SHOW_TABS_SETTING } from '../common/spacesConfig.js';
 import { ISpaceTabState, emptySpaceTabState } from '../common/spacesTabs.js';
 import { buildSpacesState, fromPersistedWorkspace } from '../common/spacesState.js';
 import { isDirectChildOfRoot, joinRootFolder, pathKey, scanRootFolders, trimRootPath } from '../common/spacesRoot.js';
 import { SpacesTabStore } from './spacesTabStore.js';
-import { ISpacesLifecycleEvent, SpacesLifecycleService } from '../common/spacesLifecycle.js';
+import { SpacesScriptHost } from './spacesScriptHost.js';
+import { ISpaceInfo, ISpacesLifecycleEvent, SpacesLifecycleService } from '../common/spacesLifecycle.js';
 import { SpacesStateStore } from './spacesStateStore.js';
+import { spacesPayload, spacePayload } from '../common/spacesScripts.js';
 import { IWorkbenchHost } from '../../window/electron-main/workbenchHost.js';
 import { IWindowsMainService, defaultBrowserWindowOptions } from '../../windows/electron-main/windows.js';
 import { WindowMode, defaultWindowState } from '../../window/electron-main/window.js';
@@ -60,6 +63,9 @@ export interface ISpacesViewService extends AddFirstParameterToFunctions<ICommon
 
 	/** Most recent lifecycle events (oldest first), for late subscribers / diagnostics. */
 	getLifecycleEvents(): readonly ISpacesLifecycleEvent[];
+
+	/** Script-produced per-Space info (Terax SpaceInfo), for the sidebar subtitle/status. */
+	getScriptsInfoBySpace(): ReadonlyMap<string, ISpaceInfo>;
 }
 
 /**
@@ -123,6 +129,10 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		return this.lifecycle.getLifecycleEvents();
 	}
 
+	getScriptsInfoBySpace(): ReadonlyMap<string, ISpaceInfo> {
+		return this.scriptHost.getInfoBySpace();
+	}
+
 	private readonly tabStore: SpacesTabStore;
 
 	private readonly stateStore: SpacesStateStore;
@@ -147,6 +157,13 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 	private sidebarHost: SpacesSidebarHost | undefined = undefined;
 	get sidebar(): SpacesSidebarHost | undefined { return this.sidebarHost; }
 
+	/** Terax-style user scripts host (Space status/subtitle customisation). */
+	private readonly scriptHost: SpacesScriptHost;
+	private readonly environmentMainService: IEnvironmentMainService;
+
+	/** Fingerprint of root-backed Space ids, used to re-fire `spaces.loaded`. */
+	private lastScriptedRootSpaceIds: string | undefined;
+
 	/** host per Space, mapped by Space id. */
 	private readonly hosts = new Map<string, IWorkbenchHost>();
 
@@ -166,6 +183,22 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 		super();
 		this.tabStore = new SpacesTabStore(applicationStorageMainService, logService);
 		this.stateStore = new SpacesStateStore(environmentMainService, logService);
+		this.environmentMainService = environmentMainService;
+
+
+		// Terax-style user scripts: the scripts directory defaults to `~/git` and
+		// is overridable via the `spaces.scriptsDir` setting.
+		this.scriptHost = this._register(new SpacesScriptHost({
+			logService,
+			fileService,
+			resolveScriptsDir: () => this.resolveScriptsDir(),
+			isExplicitScriptsDir: () => !!this.configurationService.getValue<string>(SPACES_SCRIPTS_DIR_SETTING)
+		}));
+		this._register(this.scriptHost.onDidChangeInfo(() => {
+			// Script results (subtitle/status) changed: refresh the sidebar but
+			// do not re-persist state or re-fire lifecycle events.
+			this._onDidChangeSpaces.fire(this.model.snapshot());
+		}));
 
 		this._register(this.model.onDidChange(() => {
 			const snapshot = this.model.snapshot();
@@ -173,10 +206,35 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 			// Lifecycle (deduplicated by the Space-list footprint inside the service).
 			this.lifecycle.fireChanged(snapshot);
 			this.persistState();
+
+			// Terax parity: re-fire `spaces.loaded` when the set of root-backed
+			// Spaces changes after boot, so scripts recompute info for the new set.
+			const rootIds = snapshot.spaces
+				.filter(space => !!space.workspace)
+				.map(space => space.id)
+				.sort()
+				.join(',');
+			if (this.lastScriptedRootSpaceIds === undefined) {
+				this.lastScriptedRootSpaceIds = rootIds;
+			} else if (this.lastScriptedRootSpaceIds !== rootIds) {
+				this.lastScriptedRootSpaceIds = rootIds;
+				void this.scriptHost.dispatch('spaces.loaded', () => spacesPayload(snapshot));
+			}
 		}));
 
 		// `app.started`: the Spaces service is up.
 		this.lifecycle.fireAppStarted(this.model.snapshot());
+
+		// Dispatch Terax lifecycle events the same way the Terax plugin bridge
+		// does: exactly one `spaces.loaded`, plus `space.activated` on switch.
+		this._register(this.lifecycle.onDidFireLifecycleEvent(event => {
+			if (event.kind === 'spaces.loaded') {
+				void this.scriptHost.ensureScriptsDirectory().then(() =>
+					this.scriptHost.dispatch('spaces.loaded', () => spacesPayload(event.stateSnapshot)));
+			} else if (event.kind === 'space.activated' && event.space) {
+				void this.scriptHost.dispatch('space.activated', () => spacePayload(event.space!));
+			}
+		}));
 
 		// A changed `spaces.root` must be reflected in the Space list.
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
@@ -193,16 +251,40 @@ export class SpacesViewService extends Disposable implements ISpacesViewService 
 	async getSidebarSettings(windowId: number | undefined): Promise<ISpacesSettings> {
 		return {
 			spacesRoot: this.configurationService.getValue<string>(SPACES_ROOT_SETTING) ?? null,
+			scriptsDir: this.resolveScriptsDir(),
 			showSpaceTabs: this.configurationService.getValue<boolean>(SPACES_SHOW_TABS_SETTING) ?? false,
 			showSpaceInitials: this.configurationService.getValue<boolean>(SPACES_SHOW_INITIALS_SETTING) ?? false
 		};
 	}
 
 	async setSidebarSetting(windowId: number | undefined, key: string, value: unknown): Promise<void> {
-		const setting = key === 'spacesRoot' ? SPACES_ROOT_SETTING : key === 'showSpaceTabs' ? SPACES_SHOW_TABS_SETTING : key === 'showSpaceInitials' ? SPACES_SHOW_INITIALS_SETTING : undefined;
+		const setting = key === 'spacesRoot' ? SPACES_ROOT_SETTING
+			: key === 'scriptsDir' ? SPACES_SCRIPTS_DIR_SETTING
+				: key === 'showSpaceTabs' ? SPACES_SHOW_TABS_SETTING
+					: key === 'showSpaceInitials' ? SPACES_SHOW_INITIALS_SETTING
+						: undefined;
 		if (setting) {
 			await this.configurationService.updateValue(setting, value, ConfigurationTarget.USER);
+			if (key === 'scriptsDir') {
+				// A new directory must be materialised (and the built-in script
+				// seeded when it does not exist yet).
+				await this.scriptHost.ensureScriptsDirectory();
+				await this.scriptHost.dispatch('spaces.loaded', () => spacesPayload(this.model.snapshot()));
+			}
 		}
+	}
+
+	/** Resolves the effective scripts directory (setting, else `~/git`). */
+	private resolveScriptsDir(): string {
+		const configured = this.configurationService.getValue<string>(SPACES_SCRIPTS_DIR_SETTING);
+		if (configured) {
+			return configured;
+		}
+		// `userHome` is always present in a real main process; a fallback keeps
+		// the service robust in test/mainless environments.
+		const userHome = this.environmentMainService.userHome;
+		const homeFsPath = userHome?.fsPath || homedir();
+		return joinPath(URI.file(homeFsPath), 'git').fsPath;
 	}
 
 	async getSpaceTabs(windowId: number | undefined, spaceId: string): Promise<ISpaceTabState> {

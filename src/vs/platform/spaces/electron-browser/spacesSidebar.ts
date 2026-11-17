@@ -91,7 +91,7 @@ let width = readWidth();
 let collapseTimer: number | null = null;
 
 let data: ISpacesSidebarData = { spaces: [] };
-let settings: ISpacesSidebarSettings = { spacesRoot: null, showSpaceTabs: false, showSpaceInitials: false };
+let settings: ISpacesSidebarSettings = { spacesRoot: null, scriptsDir: null, showSpaceTabs: false, showSpaceInitials: false };
 const expanded = new Set<string>();
 
 // ---- state persistence ----
@@ -232,7 +232,12 @@ function createRow(space: ISpacesSidebarSpace): HTMLDivElement {
 	if (!space.isCurrent) {
 		const dot = document.createElement('span');
 		dot.className = 'status-dot';
-		dot.title = space.needsAttention ? 'Space needs attention' : 'Space is running';
+		if (space.info?.status && space.info.status !== 'online') {
+			dot.title = `Space is ${space.info.status}`;
+			dot.dataset.status = space.info.status;
+		} else {
+			dot.title = space.needsAttention ? 'Space needs attention' : 'Space is running';
+		}
 		row.appendChild(dot);
 	}
 
@@ -256,10 +261,17 @@ function createRow(space: ISpacesSidebarSpace): HTMLDivElement {
 		ws.textContent = space.workspaceLabel;
 		main.appendChild(ws);
 	}
-	// Terax-style summary line: lightweight lifecycle info from the main process.
+	// Terax-style summary line: the user script's `info.summary` when present
+	// (Terax plugin output), else lifecycle last-active info from the main process.
 	const meta = document.createElement('div');
 	meta.className = 'meta';
-	meta.textContent = space.isCurrent ? 'active now' : `last active ${lastActiveLabel(space.lastActiveAt)}`;
+	const scriptSummary = space.info?.summary;
+	meta.textContent = scriptSummary
+		? scriptSummary
+		: space.isCurrent ? 'active now' : `last active ${lastActiveLabel(space.lastActiveAt)}`;
+	if (space.info?.status && space.info.status !== 'online') {
+		meta.dataset.status = space.info.status;
+	}
 	main.appendChild(meta);
 	row.appendChild(main);
 

@@ -5,6 +5,19 @@ GitHub Release 的备注由发布 workflow 从本文件对应版本 section 自�
 
 发布新版本前，**必须先在顶部添加对应版本的 section**，否则 workflow 会失败。
 
+## [1.143.18] - 2026-11-17
+
+### 新功能
+- **Terax 风格用户脚本自定义 Space 数据（`spaces.scriptsDir`）**。在 `~/git`（默认）或配置的脚本目录中放置 `.mjs` / `.cjs` / `.js` 文件，导出一个 `export default { "事件类型": async (payload) => result }` 处理器表即可按 Terax 语义定制每个 Space 的 subtitle / 状态：
+  - 事件时机与 Terax 完全一致：`spaces.loaded`（幂等一次性，root Space 集合变化时重发）、`space.activated`（切换激活时）、`app.started` / `spaces.changed` / `space.deactivated`（预留一致语义）。
+  - 脚本由主进程以 Node 子进程执行，逐行 JSON-RPC over stdio，5 秒超时 kill；`?paracode=<ms>` 查询参数保证编辑后立即生效；stderr 尾部并入错误，脚本失败**显示在侧栏**而不是静默黑屏。
+  - 脚本结果 `spaces.info.updated` / `space.info.updated` 回灌侧栏：`summary` 作为次行、`status` 作为状态色点（online=绿 / degraded=琥珀 / offline=灰 / unknown=暗）。
+  - Node 解析顺序对齐 Terax：`PARACODE_NODE` 环境变量 → PATH → fnm / volta / nvm 安装根。
+  - 首次显式配置 `spaces.scriptsDir` 时自动创建目录并写入内置示例 `space-info.mjs`；默认 `~/git` 仅在已存在时启用，绝不自动创建用户目录。
+
+### 设置
+- 新增 `spaces.scriptsDir` 设置项（默认空 → 使用 `~/git`），在设置 UI 可配置。
+
 ## [1.143.17] - 2026-11-17
 
 ### 新功能

@@ -22,7 +22,7 @@ import { IInstantiationService } from '../../../../platform/instantiation/common
 import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { ISpace, ISpacesService, ISpacesSnapshot, SPACES_ENABLED_SETTING } from '../../../../platform/spaces/common/spaces.js';
-import { SPACES_ROOT_SETTING, SPACES_SHOW_INITIALS_SETTING, SPACES_SHOW_TABS_SETTING } from '../../../../platform/spaces/common/spacesConfig.js';
+import { SPACES_ROOT_SETTING, SPACES_SCRIPTS_DIR_SETTING, SPACES_SHOW_INITIALS_SETTING, SPACES_SHOW_TABS_SETTING } from '../../../../platform/spaces/common/spacesConfig.js';
 import { workbenchConfigurationNodeBase } from '../../../common/configuration.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.js';
@@ -44,6 +44,10 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 		[SPACES_ROOT_SETTING]: {
 			type: 'string',
 			markdownDescription: localize('spaces.root', "The root folder under which every first-level sub-folder becomes a Space. Space folders are created, renamed and deleted alongside the Spaces list.")
+		},
+		[SPACES_SCRIPTS_DIR_SETTING]: {
+			type: 'string',
+			markdownDescription: localize('spaces.scriptsDir', "Folder holding user JavaScript scripts that customise each Space's status/subtitle (Terax-compatible). Leave empty to use the default `~/git` directory.")
 		},
 		[SPACES_SHOW_TABS_SETTING]: {
 			type: 'boolean',

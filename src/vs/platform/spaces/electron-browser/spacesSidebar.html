@@ -43,6 +43,10 @@ button:hover { background: rgba(128, 128, 128, 0.25); color: var(--fg, #cccccc);
 	background: var(--muted, #969696); opacity: 0.65;
 }
 			.row .status-dot[title*="attention"] { background: #f4b740; opacity: 1; }
+			.row .status-dot[data-status="degraded"] { background: #f4b740; opacity: 1; }
+			.row .status-dot[data-status="offline"] { background: #6b6b6b; opacity: 0.8; }
+			.row .status-dot[data-status="unknown"] { background: var(--muted, #969696); opacity: 0.5; }
+			.row .status-dot[data-status="online"] { background: #3fb950; opacity: 1; }
 			.row .caret {
 	flex: 0 0 12px; width: 12px; height: 16px; font-size: 10px; color: var(--muted, #969696);
 	display: flex; align-items: center; justify-content: center;
@@ -65,6 +69,9 @@ button:hover { background: rgba(128, 128, 128, 0.25); color: var(--fg, #cccccc);
 			.row .name { font-weight: 500; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 			.row .workspace { font-size: 10.5px; color: var(--muted, #969696); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 			.row .meta { font-size: 10px; color: var(--muted, #969696); opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+			.row .meta[data-status="degraded"] { color: #f4b740; }
+			.row .meta[data-status="offline"] { color: var(--muted, #969696); }
+			.row .meta[data-status="unknown"] { color: var(--muted, #969696); }
 			.row.active .meta { color: var(--fg, #cccccc); opacity: 0.7; }
 			.row .badge {
 	font-size: 10px; padding: 1px 6px; border-radius: 8px;

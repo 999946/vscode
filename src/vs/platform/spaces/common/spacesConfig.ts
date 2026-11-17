@@ -5,8 +5,10 @@
 
 /**
  * Spaces user-facing configuration, mirroring Terax:
- * - `spaces.root`      — folder whose first-level sub-folders each become a Space
- * - `spaces.showTabs`  — show each Space's tab list in the panel/switcher
+ * - `spaces.root`       — folder whose first-level sub-folders each become a Space
+ * - `spaces.scriptsDir` — folder holding user JS scripts that customise Space
+ *                         status/subtitle data (default: `~/git`)
+ * - `spaces.showTabs`   — show each Space's tab list in the panel/switcher
  * - `spaces.showInitials` — use the Space name's first letter as its avatar
  *
  * The sidebar reads/writes these through the main process; the Settings UI
@@ -14,17 +16,20 @@
  */
 
 export const SPACES_ROOT_SETTING = 'spaces.root';
+export const SPACES_SCRIPTS_DIR_SETTING = 'spaces.scriptsDir';
 export const SPACES_SHOW_TABS_SETTING = 'spaces.showTabs';
 export const SPACES_SHOW_INITIALS_SETTING = 'spaces.showInitials';
 
 export const SIDEBAR_SETTING_KEYS = [
 	SPACES_ROOT_SETTING,
+	SPACES_SCRIPTS_DIR_SETTING,
 	SPACES_SHOW_TABS_SETTING,
 	SPACES_SHOW_INITIALS_SETTING
 ] as const;
 
 export interface ISpacesSettings {
 	spacesRoot: string | null;
+	scriptsDir: string | null;
 	showSpaceTabs: boolean;
 	showSpaceInitials: boolean;
 }
@@ -32,6 +37,7 @@ export interface ISpacesSettings {
 export function defaultSpacesSettings(): ISpacesSettings {
 	return {
 		spacesRoot: null,
+		scriptsDir: null,
 		showSpaceTabs: true,
 		showSpaceInitials: false
 	};
